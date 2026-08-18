@@ -13,6 +13,7 @@ import {
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiOkResponse,
@@ -33,6 +34,7 @@ import {
   SuccessResponseDto,
 } from '../../common/dto/api-response.dto';
 import { PrismaService } from '../../database/prisma.service';
+import { CloudinaryService } from '../../service/cloudinary/cloudinary.service';
 import {
   AddressDto,
   NotificationPreferencesDto,
@@ -53,7 +55,10 @@ import {
 @Controller('users')
 @UseGuards(JwtAuthGuard)
 export class UsersController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cloudinary: CloudinaryService,
+  ) {}
 
   @Get('me')
   @ApiOperation({ summary: 'Get the authenticated user profile' })
@@ -76,6 +81,34 @@ export class UsersController {
     return this.prisma.user.update({
       where: { id: user.id },
       data: dto,
+      omit: { passwordHash: true },
+    });
+  }
+
+  @Patch('me/avatar')
+  @ApiOperation({
+    summary:
+      'Save a Cloudinary URL as the authenticated user profile picture',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['avatarUrl'],
+      properties: {
+        avatarUrl: { type: 'string', format: 'uri' },
+      },
+    },
+  })
+  @ApiOkResponse({ type: UserResponseDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  async uploadAvatar(@CurrentUser() user: AuthUser, @Body('avatarUrl') avatarUrl?: string) {
+    if (!avatarUrl)
+      throw new BadRequestException('avatarUrl is required');
+    const normalizedAvatarUrl = this.cloudinary.normalizeUrl(avatarUrl);
+    return this.prisma.user.update({
+      where: { id: user.id },
+      data: { avatarUrl: normalizedAvatarUrl },
       omit: { passwordHash: true },
     });
   }

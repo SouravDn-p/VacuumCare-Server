@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
+import { CloudinaryModule } from './service/cloudinary/cloudinary.module';
 import { AdminModule } from './features/admin/admin.module';
 import { AuthModule } from './features/auth/auth.module';
 import { CartModule } from './features/cart/cart.module';
@@ -18,6 +19,7 @@ import { UsersModule } from './features/users/users.module';
 @Module({
   imports: [
     DatabaseModule,
+    CloudinaryModule,
     AdminModule,
     AuthModule,
     CartModule,
