@@ -46,12 +46,6 @@ export class SignupResponseDto {
   })
   message!: string;
 
-  @ApiPropertyOptional({
-    description:
-      'Raw OTP — only included outside production for local development. Never present in production.',
-    example: '73920',
-  })
-  otp?: string;
 }
 
 export class VerifyEmailResponseDto {
@@ -80,12 +74,6 @@ export class ForgotPasswordResponseDto {
   })
   message!: string;
 
-  @ApiPropertyOptional({
-    description:
-      'Raw 5-digit OTP — only included outside production for local development. Never present in production.',
-    example: '48271',
-  })
-  otp?: string;
 }
 
 export class ResendVerificationResponseDto {
@@ -95,12 +83,6 @@ export class ResendVerificationResponseDto {
   })
   message!: string;
 
-  @ApiPropertyOptional({
-    description:
-      'Raw 5-digit OTP — only included outside production for local development. Never present in production.',
-    example: '73920',
-  })
-  otp?: string;
 }
 
 export class LogoutResponseDto {

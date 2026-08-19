@@ -8,7 +8,7 @@ export class EmailVerificationDeliveryService {
    * exposes the raw OTP in the response body instead.
    */
   async send(email: string, otp: string): Promise<void> {
-    if (process.env.NODE_ENV !== 'production') return;
+    // Email is now sent in all environments (removed NODE_ENV early return).
 
     const apiKey = process.env.BREVO_API_KEY;
     const from = process.env.MAIL_FROM;

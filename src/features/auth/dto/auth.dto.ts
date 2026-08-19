@@ -121,6 +121,10 @@ export class ForgotPasswordDto {
 }
 
 export class ResetPasswordDto {
+  @ApiProperty({ format: 'email', example: 'alex@example.com' })
+  @IsEmail()
+  email!: string;
+
   @ApiProperty({
     description: '5-digit OTP received in the password-reset email.',
     example: '48271',
@@ -149,6 +153,10 @@ export class RefreshTokenDto {
 }
 
 export class VerifyEmailDto {
+  @ApiProperty({ format: 'email', example: 'alex@example.com' })
+  @IsEmail()
+  email!: string;
+
   @ApiProperty({
     description: '5-digit OTP sent to the email address during signup.',
     example: '73920',

@@ -113,9 +113,8 @@ export class AuthController {
     if (existingUser) {
       // If user exists but is not verified, provide helpful message
       if (!existingUser.isActive) {
-        throw new ConflictException(
-          'This email is already registered but not verified. Please check your email for the verification code or use the resend-verification endpoint to receive a new code.',
-        );
+        await this.issueEmailVerificationOtp(existingUser.id, existingUser.email);
+        throw new ConflictException('Verification needed');
       }
       // If user exists and is verified
       throw new ConflictException('Email already registered');
@@ -168,13 +167,11 @@ export class AuthController {
       include: { addresses: true, technician: true },
     });
 
-    const otp = await this.issueEmailVerificationOtp(user.id, user.email);
+    await this.issueEmailVerificationOtp(user.id, user.email);
 
     return {
       emailVerificationRequired: true,
       message: 'A 5-digit verification code has been sent to your email.',
-      // Expose OTP outside production so local dev/tests can proceed without email.
-      ...(process.env.NODE_ENV !== 'production' ? { otp } : {}),
     };
   }
 
@@ -265,7 +262,12 @@ export class AuthController {
   async verifyEmail(@Body() dto: VerifyEmailDto) {
     const otpHash = createHash('sha256').update(dto.otp).digest('hex');
     const verification = await this.prisma.emailVerificationToken.findFirst({
-      where: { tokenHash: otpHash, usedAt: null, expiresAt: { gt: new Date() } },
+      where: { 
+        tokenHash: otpHash, 
+        usedAt: null, 
+        expiresAt: { gt: new Date() },
+        user: { email: dto.email.toLowerCase() },
+      },
     });
     if (!verification)
       throw new UnauthorizedException('Invalid or expired verification code');
@@ -308,12 +310,11 @@ export class AuthController {
       };
     }
 
-    const otp = await this.issueEmailVerificationOtp(user.id, user.email);
+    await this.issueEmailVerificationOtp(user.id, user.email);
 
     return {
       message:
         'If that account exists and still needs verification, a new code has been sent.',
-      ...(process.env.NODE_ENV !== 'production' ? { otp } : {}),
     };
   }
 
@@ -357,7 +358,6 @@ export class AuthController {
 
     return {
       message: 'If that account exists, a reset code has been sent.',
-      ...(process.env.NODE_ENV !== 'production' ? { otp } : {}),
     };
   }
 
@@ -372,7 +372,12 @@ export class AuthController {
   async resetPassword(@Body() dto: ResetPasswordDto) {
     const otpHash = createHash('sha256').update(dto.otp).digest('hex');
     const reset = await this.prisma.passwordResetToken.findFirst({
-      where: { tokenHash: otpHash, usedAt: null, expiresAt: { gt: new Date() } },
+      where: { 
+        tokenHash: otpHash, 
+        usedAt: null, 
+        expiresAt: { gt: new Date() },
+        user: { email: dto.email.toLowerCase() },
+      },
     });
     if (!reset) throw new UnauthorizedException('Invalid or expired reset code');
 
