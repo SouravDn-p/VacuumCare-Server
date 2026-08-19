@@ -6,6 +6,8 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Length,
+  Matches,
   Min,
   MinLength,
 } from 'class-validator';
@@ -58,15 +60,6 @@ export class SignupDto {
   })
   @IsBoolean()
   acceptTerms!: boolean;
-
-  @ApiPropertyOptional({
-    example: true,
-    description:
-      'When true, the account is created inactive until the email address is verified.',
-  })
-  @IsOptional()
-  @IsBoolean()
-  requireEmailVerification?: boolean;
 
   @ApiProperty({
     example: '2026-08-17',
@@ -129,11 +122,13 @@ export class ForgotPasswordDto {
 
 export class ResetPasswordDto {
   @ApiProperty({
-    description: 'One-time reset token received from the password-reset flow.',
-    example: 'cfa3d4b17a0e4f77b9f0d3b321739c22',
+    description: '5-digit OTP received in the password-reset email.',
+    example: '48271',
   })
   @IsString()
-  token!: string;
+  @Length(5, 5)
+  @Matches(/^\d{5}$/, { message: 'otp must be a 5-digit number' })
+  otp!: string;
 
   @ApiProperty({
     format: 'password',
@@ -146,7 +141,7 @@ export class ResetPasswordDto {
 
 export class RefreshTokenDto {
   @ApiProperty({
-    description: 'Opaque refresh token issued during signup or login.',
+    description: 'Opaque refresh token issued during login or after OTP verification.',
     example: '7bc1f1c3b5e44d68a5f4b18a6c2f6b0a...',
   })
   @IsString()
@@ -155,18 +150,20 @@ export class RefreshTokenDto {
 
 export class VerifyEmailDto {
   @ApiProperty({
-    description: 'One-time email verification token.',
-    example: 'f7d1d4c8f4c24f0aa7c0a12c5d8d7a3c...',
+    description: '5-digit OTP sent to the email address during signup.',
+    example: '73920',
   })
   @IsString()
-  token!: string;
+  @Length(5, 5)
+  @Matches(/^\d{5}$/, { message: 'otp must be a 5-digit number' })
+  otp!: string;
 }
 
 export class ResendVerificationDto {
   @ApiProperty({
     format: 'email',
     example: 'alex@example.com',
-    description: 'Email address that needs a fresh verification OTP.',
+    description: 'Email address that needs a fresh 5-digit verification OTP.',
   })
   @IsEmail()
   email!: string;

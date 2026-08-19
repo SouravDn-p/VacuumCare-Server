@@ -18,8 +18,7 @@ export class AuthenticatedUserResponseDto {
 
 export class AuthSessionResponseDto {
   @ApiProperty({
-    description:
-      'JWT access token. Send it as `Authorization: Bearer <token>`.',
+    description: 'JWT access token. Send as `Authorization: Bearer <token>`.',
     example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.signature',
   })
   accessToken!: string;
@@ -28,8 +27,48 @@ export class AuthSessionResponseDto {
   user!: AuthenticatedUserResponseDto;
 
   @ApiProperty({
+    description: 'Opaque refresh token — exchange for a new session via POST /auth/refresh.',
+    example: '7bc1f1c3b5e44d68a5f4b18a6c2f6b0a...',
+  })
+  refreshToken!: string;
+}
+
+export class SignupResponseDto {
+  @ApiProperty({
     description:
-      'Opaque refresh token that can be exchanged for a new access token.',
+      'Always true — every new account must be verified with a 5-digit OTP before login.',
+    example: true,
+  })
+  emailVerificationRequired!: boolean;
+
+  @ApiProperty({
+    example: 'A 5-digit verification code has been sent to your email.',
+  })
+  message!: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Raw OTP — only included outside production for local development. Never present in production.',
+    example: '73920',
+  })
+  otp?: string;
+}
+
+export class VerifyEmailResponseDto {
+  @ApiProperty({ example: true })
+  success!: boolean;
+
+  @ApiProperty({
+    description: 'JWT access token issued after successful email verification.',
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.signature',
+  })
+  accessToken!: string;
+
+  @ApiProperty({ type: () => AuthenticatedUserResponseDto })
+  user!: AuthenticatedUserResponseDto;
+
+  @ApiProperty({
+    description: 'Opaque refresh token.',
     example: '7bc1f1c3b5e44d68a5f4b18a6c2f6b0a...',
   })
   refreshToken!: string;
@@ -43,58 +82,28 @@ export class ForgotPasswordResponseDto {
 
   @ApiPropertyOptional({
     description:
-      'Only included outside production to support local development. Never expose this token in production.',
-    example: 'cfa3d4b17a0e4f77b9f0d3b321739c22',
+      'Raw 5-digit OTP — only included outside production for local development. Never present in production.',
+    example: '48271',
   })
-  token?: string;
-}
-
-export class VerifyEmailResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-}
-
-export class SignupResponseDto {
-  @ApiPropertyOptional({
-    description:
-      'Present when the account was created in a pending state and must be verified by email before login.',
-    example: true,
-  })
-  emailVerificationRequired?: boolean;
-
-  @ApiPropertyOptional({
-    description:
-      'JWT access token returned when email verification is not required.',
-    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.signature',
-  })
-  accessToken?: string;
-
-  @ApiPropertyOptional({ type: () => AuthenticatedUserResponseDto })
-  user?: AuthenticatedUserResponseDto;
-
-  @ApiPropertyOptional({
-    description:
-      'Opaque refresh token returned when email verification is not required.',
-    example: '7bc1f1c3b5e44d68a5f4b18a6c2f6b0a...',
-  })
-  refreshToken?: string;
-}
-
-export class LogoutResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
+  otp?: string;
 }
 
 export class ResendVerificationResponseDto {
   @ApiProperty({
-    example: 'If that account exists and still needs verification, a new code has been sent.',
+    example:
+      'If that account exists and still needs verification, a new code has been sent.',
   })
   message!: string;
 
   @ApiPropertyOptional({
     description:
-      'Only included outside production to support local development. Never expose this token in production.',
-    example: 'f7d1d4c8f4c24f0aa7c0a12c5d8d7a3c',
+      'Raw 5-digit OTP — only included outside production for local development. Never present in production.',
+    example: '73920',
   })
-  token?: string;
+  otp?: string;
+}
+
+export class LogoutResponseDto {
+  @ApiProperty({ example: true })
+  success!: boolean;
 }

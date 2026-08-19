@@ -20,7 +20,7 @@ export class CloudinaryService {
     const formData = new FormData();
     formData.append(
       'file',
-      new Blob([file.buffer], { type: file.mimetype }),
+      new Blob([new Uint8Array(file.buffer)], { type: file.mimetype }),
       file.originalname,
     );
     formData.append('upload_preset', this.uploadPreset);

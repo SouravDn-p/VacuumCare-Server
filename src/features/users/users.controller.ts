@@ -8,12 +8,15 @@ import {
   Param,
   Patch,
   Post,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiBody,
+  ApiConsumes,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiOkResponse,
@@ -22,6 +25,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   TechnicianVerificationStatus,
   UserRole,
@@ -74,41 +78,39 @@ export class UsersController {
 
   @Patch('me')
   @ApiOperation({ summary: 'Update the authenticated user profile' })
-  @ApiOkResponse({ type: UserResponseDto })
-  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
-  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
-  update(@CurrentUser() user: AuthUser, @Body() dto: ProfileDto) {
-    return this.prisma.user.update({
-      where: { id: user.id },
-      data: dto,
-      omit: { passwordHash: true },
-    });
-  }
-
-  @Patch('me/avatar')
-  @ApiOperation({
-    summary:
-      'Save a Cloudinary URL as the authenticated user profile picture',
-  })
+  @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
-      required: ['avatarUrl'],
       properties: {
-        avatarUrl: { type: 'string', format: 'uri' },
+        firstName: { type: 'string', example: 'Alex' },
+        lastName: { type: 'string', example: 'Morgan' },
+        phone: { type: 'string', example: '+1 416 555 0100' },
+        company: { type: 'string', example: 'Morgan Home Services' },
+        avatar: {
+          type: 'string',
+          format: 'binary',
+          description: 'Profile picture — uploaded to Cloudinary; the returned URL is saved.',
+        },
       },
     },
   })
   @ApiOkResponse({ type: UserResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
-  async uploadAvatar(@CurrentUser() user: AuthUser, @Body('avatarUrl') avatarUrl?: string) {
-    if (!avatarUrl)
-      throw new BadRequestException('avatarUrl is required');
-    const normalizedAvatarUrl = this.cloudinary.normalizeUrl(avatarUrl);
+  @UseInterceptors(FileInterceptor('avatar'))
+  async update(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: ProfileDto,
+    @UploadedFile() avatar?: Express.Multer.File,
+  ) {
+    let avatarUrl: string | undefined;
+    if (avatar) {
+      avatarUrl = await this.cloudinary.uploadFile(avatar, 'vacuumCare/avatars');
+    }
     return this.prisma.user.update({
       where: { id: user.id },
-      data: { avatarUrl: normalizedAvatarUrl },
+      data: { ...dto, ...(avatarUrl ? { avatarUrl } : {}) },
       omit: { passwordHash: true },
     });
   }

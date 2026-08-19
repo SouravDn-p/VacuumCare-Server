@@ -26,14 +26,6 @@ export class ProfileDto {
   @IsString()
   phone?: string;
 
-  @ApiPropertyOptional({
-    format: 'uri',
-    example: 'https://cdn.example.com/avatars/alex.jpg',
-  })
-  @IsOptional()
-  @IsString()
-  avatarUrl?: string;
-
   @ApiPropertyOptional({ example: 'Morgan Home Services' })
   @IsOptional()
   @IsString()

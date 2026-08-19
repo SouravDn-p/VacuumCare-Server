@@ -53,6 +53,14 @@ import { UserProfileResponseDto } from '../users/dto/user-response.dto';
 import { EmailVerificationDeliveryService } from './email-verification-delivery.service';
 import { PasswordResetDeliveryService } from './password-reset-delivery.service';
 
+/** Generates a cryptographically random 5-digit OTP string (10000–99999). */
+function generateOtp(): string {
+  // Use randomBytes to avoid Math.random bias. Take a 3-byte value, map it
+  // into [0, 90000) then add 10000 to guarantee exactly 5 digits.
+  const n = randomBytes(3).readUIntBE(0, 3) % 90000;
+  return (10000 + n).toString();
+}
+
 @ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
@@ -63,8 +71,10 @@ export class AuthController {
     private readonly emailVerificationDelivery: EmailVerificationDeliveryService,
   ) {}
 
+  // ─── Signup ──────────────────────────────────────────────────────────────────
+
   @Post('customer/signup')
-  @ApiOperation({ summary: 'Register a customer' })
+  @ApiOperation({ summary: 'Register a customer — always sends a 5-digit verification OTP' })
   @ApiCreatedResponse({ type: SignupResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiConflictResponse({
@@ -77,7 +87,7 @@ export class AuthController {
 
   @Post('technician/signup')
   @ApiOperation({
-    summary: 'Register a technician with skills and service area',
+    summary: 'Register a technician — always sends a 5-digit verification OTP',
   })
   @ApiCreatedResponse({ type: SignupResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
@@ -94,14 +104,33 @@ export class AuthController {
       throw new BadRequestException(
         'Terms acceptance is required to create an account',
       );
-    if (
-      await this.prisma.user.findUnique({
-        where: { email: dto.email.toLowerCase() },
-      })
-    )
+
+    // Check if email is already registered
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: dto.email.toLowerCase() },
+    });
+
+    if (existingUser) {
+      // If user exists but is not verified, provide helpful message
+      if (!existingUser.isActive) {
+        throw new ConflictException(
+          'This email is already registered but not verified. Please check your email for the verification code or use the resend-verification endpoint to receive a new code.',
+        );
+      }
+      // If user exists and is verified
       throw new ConflictException('Email already registered');
+    }
+
+    if (
+      dto.phone &&
+      (await this.prisma.user.findUnique({ where: { phone: dto.phone } }))
+    )
+      throw new ConflictException('Phone number already registered');
+
     const technician =
       role === UserRole.TECHNICIAN ? (dto as TechnicianSignupDto) : undefined;
+
+    // Account is always created inactive until the OTP is verified.
     const user = await this.prisma.user.create({
       data: {
         role,
@@ -112,7 +141,7 @@ export class AuthController {
         phone: dto.phone,
         termsAcceptedAt: new Date(),
         termsVersion: dto.termsVersion,
-        isActive: dto.requireEmailVerification ? false : true,
+        isActive: false,
         addresses: {
           create: {
             line1: dto.address,
@@ -138,14 +167,18 @@ export class AuthController {
       },
       include: { addresses: true, technician: true },
     });
-    if (dto.requireEmailVerification) {
-      await this.issueEmailVerification(user.id, user.email);
-      return {
-        emailVerificationRequired: true,
-      };
-    }
-    return this.session(user);
+
+    const otp = await this.issueEmailVerificationOtp(user.id, user.email);
+
+    return {
+      emailVerificationRequired: true,
+      message: 'A 5-digit verification code has been sent to your email.',
+      // Expose OTP outside production so local dev/tests can proceed without email.
+      ...(process.env.NODE_ENV !== 'production' ? { otp } : {}),
+    };
   }
+
+  // ─── Login ───────────────────────────────────────────────────────────────────
 
   @Post('login')
   @ApiOperation({ summary: 'Login any customer, technician, or admin' })
@@ -168,6 +201,8 @@ export class AuthController {
       throw new UnauthorizedException('Invalid credentials');
     return this.session(user);
   }
+
+  // ─── Token refresh / logout ──────────────────────────────────────────────────
 
   @Post('refresh')
   @ApiOperation({ summary: 'Exchange a refresh token for a new session' })
@@ -209,8 +244,7 @@ export class AuthController {
     const stored = await this.prisma.refreshToken.findFirst({
       where: { tokenHash, revokedAt: null },
     });
-    if (!stored)
-      throw new UnauthorizedException('Invalid refresh token');
+    if (!stored) throw new UnauthorizedException('Invalid refresh token');
     await this.prisma.refreshToken.update({
       where: { id: stored.id },
       data: { revokedAt: new Date() },
@@ -218,21 +252,24 @@ export class AuthController {
     return { success: true };
   }
 
+  // ─── Email verification (signup OTP) ─────────────────────────────────────────
+
   @Post('verify-email')
-  @ApiOperation({ summary: 'Verify an email address with a one-time token' })
+  @ApiOperation({ summary: 'Verify signup email with the 5-digit OTP' })
   @ApiCreatedResponse({ type: VerifyEmailResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({
     type: ApiErrorResponseDto,
-    description: 'The verification token is invalid, expired, or already used.',
+    description: 'The OTP is invalid, expired, or already used.',
   })
   async verifyEmail(@Body() dto: VerifyEmailDto) {
-    const tokenHash = createHash('sha256').update(dto.token).digest('hex');
+    const otpHash = createHash('sha256').update(dto.otp).digest('hex');
     const verification = await this.prisma.emailVerificationToken.findFirst({
-      where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
+      where: { tokenHash: otpHash, usedAt: null, expiresAt: { gt: new Date() } },
     });
     if (!verification)
-      throw new UnauthorizedException('Invalid or expired verification token');
+      throw new UnauthorizedException('Invalid or expired verification code');
+
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: verification.userId },
@@ -243,62 +280,58 @@ export class AuthController {
         data: { usedAt: new Date() },
       }),
     ]);
-    return { success: true };
+
+    // Return a full session so the client can proceed immediately after verification.
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: verification.userId },
+    });
+    return {
+      success: true,
+      ...(await this.session(user)),
+    };
   }
 
   @Post('resend-verification')
-  @ApiOperation({ summary: 'Resend the signup verification OTP' })
+  @ApiOperation({ summary: 'Resend the signup 5-digit verification OTP' })
   @ApiCreatedResponse({ type: ResendVerificationResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   async resendVerification(@Body() dto: ResendVerificationDto) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
-      include: { emailVerificationTokens: true },
     });
+    // Return the same generic message regardless of whether the account exists
+    // or is already active, to prevent user enumeration.
     if (!user || user.isActive) {
       return {
         message:
           'If that account exists and still needs verification, a new code has been sent.',
       };
     }
-    await this.prisma.emailVerificationToken.updateMany({
-      where: { userId: user.id, usedAt: null },
-      data: { usedAt: new Date() },
-    });
-    const token = randomBytes(32).toString('hex');
-    const created = await this.prisma.emailVerificationToken.create({
-      data: {
-        userId: user.id,
-        tokenHash: createHash('sha256').update(token).digest('hex'),
-        expiresAt: new Date(Date.now() + 24 * 60 * 60_000),
-      },
-    });
-    try {
-      await this.emailVerificationDelivery.send(user.email, token);
-    } catch {
-      await this.prisma.emailVerificationToken.delete({ where: { id: created.id } });
-      throw new InternalServerErrorException(
-        'Email verification could not be sent',
-      );
-    }
+
+    const otp = await this.issueEmailVerificationOtp(user.id, user.email);
+
     return {
       message:
         'If that account exists and still needs verification, a new code has been sent.',
-      ...(process.env.NODE_ENV !== 'production' ? { token } : {}),
+      ...(process.env.NODE_ENV !== 'production' ? { otp } : {}),
     };
   }
 
+  // ─── Password reset ───────────────────────────────────────────────────────────
+
   @Post('forgot-password')
-  @ApiOperation({ summary: 'Request a password-reset token' })
+  @ApiOperation({ summary: 'Request a 5-digit password-reset OTP' })
   @ApiCreatedResponse({ type: ForgotPasswordResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
     });
+    // Generic message to prevent email enumeration.
     if (!user)
       return { message: 'If that account exists, a reset code has been sent.' };
-    const token = randomBytes(32).toString('hex');
+
+    const otp = generateOtp();
     const reset = await this.prisma.$transaction(async (tx) => {
       await tx.passwordResetToken.updateMany({
         where: { userId: user.id, usedAt: null },
@@ -307,40 +340,42 @@ export class AuthController {
       return tx.passwordResetToken.create({
         data: {
           userId: user.id,
-          tokenHash: createHash('sha256').update(token).digest('hex'),
-          expiresAt: new Date(Date.now() + 15 * 60_000),
+          tokenHash: createHash('sha256').update(otp).digest('hex'),
+          expiresAt: new Date(Date.now() + 15 * 60_000), // 15 minutes
         },
       });
     });
+
     try {
-      await this.passwordResetDelivery.send(user.email, token);
+      await this.passwordResetDelivery.send(user.email, otp);
     } catch {
       await this.prisma.passwordResetToken.delete({ where: { id: reset.id } });
       throw new InternalServerErrorException(
         'Password reset email could not be sent',
       );
     }
+
     return {
       message: 'If that account exists, a reset code has been sent.',
-      ...(process.env.NODE_ENV !== 'production' ? { token } : {}),
+      ...(process.env.NODE_ENV !== 'production' ? { otp } : {}),
     };
   }
 
   @Post('reset-password')
-  @ApiOperation({ summary: 'Reset password with a one-time token' })
+  @ApiOperation({ summary: 'Reset password using the 5-digit OTP' })
   @ApiCreatedResponse({ type: SuccessResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({
     type: ApiErrorResponseDto,
-    description: 'The reset token is invalid, expired, or already used.',
+    description: 'The OTP is invalid, expired, or already used.',
   })
   async resetPassword(@Body() dto: ResetPasswordDto) {
-    const tokenHash = createHash('sha256').update(dto.token).digest('hex');
+    const otpHash = createHash('sha256').update(dto.otp).digest('hex');
     const reset = await this.prisma.passwordResetToken.findFirst({
-      where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
+      where: { tokenHash: otpHash, usedAt: null, expiresAt: { gt: new Date() } },
     });
-    if (!reset)
-      throw new UnauthorizedException('Invalid or expired reset token');
+    if (!reset) throw new UnauthorizedException('Invalid or expired reset code');
+
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: reset.userId },
@@ -351,8 +386,11 @@ export class AuthController {
         data: { usedAt: new Date() },
       }),
     ]);
+
     return { success: true };
   }
+
+  // ─── Authenticated user ───────────────────────────────────────────────────────
 
   @Get('me')
   @ApiOperation({ summary: 'Get the authenticated user profile' })
@@ -368,27 +406,57 @@ export class AuthController {
     });
   }
 
-  private async session(
-    user: { id: string; email: string; role: UserRole },
-    issueRefreshToken = true,
-  ) {
+  // ─── Private helpers ──────────────────────────────────────────────────────────
+
+  /**
+   * Invalidates any existing unused email-verification tokens for the user,
+   * generates a new 5-digit OTP, persists its hash (10-minute TTL), delivers
+   * the email, and returns the raw OTP so the controller can expose it outside
+   * production.
+   */
+  private async issueEmailVerificationOtp(
+    userId: string,
+    email: string,
+  ): Promise<string> {
+    const otp = generateOtp();
+
+    await this.prisma.emailVerificationToken.updateMany({
+      where: { userId, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+
+    const created = await this.prisma.emailVerificationToken.create({
+      data: {
+        userId,
+        tokenHash: createHash('sha256').update(otp).digest('hex'),
+        expiresAt: new Date(Date.now() + 10 * 60_000), // 10 minutes
+      },
+    });
+
+    try {
+      await this.emailVerificationDelivery.send(email, otp);
+    } catch {
+      await this.prisma.emailVerificationToken.delete({ where: { id: created.id } });
+      throw new InternalServerErrorException(
+        'Verification email could not be sent',
+      );
+    }
+
+    return otp;
+  }
+
+  private async session(user: { id: string; email: string; role: UserRole }) {
     const accessToken = this.jwt.sign({
       sub: user.id,
       email: user.email,
       role: user.role,
     });
-    if (!issueRefreshToken) {
-      return {
-        accessToken,
-        user: { id: user.id, email: user.email, role: user.role },
-      };
-    }
     const refreshToken = randomBytes(48).toString('hex');
     await this.prisma.refreshToken.create({
       data: {
         userId: user.id,
         tokenHash: createHash('sha256').update(refreshToken).digest('hex'),
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60_000),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60_000), // 7 days
       },
     });
     return {
@@ -396,17 +464,5 @@ export class AuthController {
       user: { id: user.id, email: user.email, role: user.role },
       refreshToken,
     };
-  }
-
-  private async issueEmailVerification(userId: string, email: string) {
-    const token = randomBytes(32).toString('hex');
-    await this.prisma.emailVerificationToken.create({
-      data: {
-        userId,
-        tokenHash: createHash('sha256').update(token).digest('hex'),
-        expiresAt: new Date(Date.now() + 24 * 60 * 60_000),
-      },
-    });
-    await this.emailVerificationDelivery.send(email, token);
   }
 }
