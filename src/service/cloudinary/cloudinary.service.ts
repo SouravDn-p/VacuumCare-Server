@@ -5,10 +5,10 @@ type UploadResourceType = 'image' | 'video' | 'raw';
 
 @Injectable()
 export class CloudinaryService {
-  private readonly cloudName = process.env.CLOUDINARY_CLOUD_NAME?.trim();
-  private readonly apiKey = process.env.CLOUDINARY_API_KEY?.trim();
-  private readonly apiSecret = process.env.CLOUDINARY_API_SECRET?.trim();
-  private readonly uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET?.trim();
+  private get cloudName() { return process.env.CLOUDINARY_CLOUD_NAME?.trim(); }
+  private get apiKey() { return process.env.CLOUDINARY_API_KEY?.trim(); }
+  private get apiSecret() { return process.env.CLOUDINARY_API_SECRET?.trim(); }
+  private get uploadPreset() { return process.env.CLOUDINARY_UPLOAD_PRESET?.trim(); }
 
   async uploadFile(file: Express.Multer.File, folder: string): Promise<string> {
     if (!this.cloudName || !this.uploadPreset) {
