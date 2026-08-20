@@ -8,8 +8,8 @@ import { PrismaClientExceptionFilter } from './common/filters/prisma-client-exce
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
-  const corsOrigins = (process.env.CORS_ORIGIN || "")
-    .split(",")
+  const corsOrigins = (process.env.CORS_ORIGIN || '')
+    .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
 
@@ -36,8 +36,8 @@ async function bootstrap() {
     useGlobalPrefix: true,
     swaggerOptions: {
       filter: true,
-      persistAuthorization: true
-    }
+      persistAuthorization: true,
+    },
   });
   app.enableShutdownHooks();
   await app.listen(process.env.PORT ?? 5000);

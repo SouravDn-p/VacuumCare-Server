@@ -33,21 +33,17 @@ import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { ApiErrorResponseDto } from '../../common/dto/api-response.dto';
 import { PrismaService } from '../../database/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { StripeService } from '../payments/stripe.service';
 import {
   OrderResponseDto,
   RequestReturnDto,
+  RefundOrderDto,
   ReturnRequestResponseDto,
   UpdateOrderStatusDto,
   UpdateReturnStatusDto,
 } from './dto/orders.dto';
-
-const orderInclude = {
-  items: { include: { product: true } },
-  returnRequest: true,
-  statusHistory: { orderBy: { createdAt: 'asc' } },
-  payments: true,
-} as const;
+import { orderDetailInclude } from './order-detail';
 
 const ALLOWED_ORDER_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   PAYMENT_PENDING: [],
@@ -77,6 +73,7 @@ export class OrdersController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stripe: StripeService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   @Get()
@@ -89,7 +86,7 @@ export class OrdersController {
   list(@CurrentUser() user: AuthUser) {
     return this.prisma.order.findMany({
       where: user.role === UserRole.ADMIN ? {} : { customerId: user.id },
-      include: orderInclude,
+      include: orderDetailInclude,
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -107,7 +104,7 @@ export class OrdersController {
     const order = await this.authorizedOrder(user, id);
     return this.prisma.order.findUniqueOrThrow({
       where: { id: order.id },
-      include: orderInclude,
+      include: orderDetailInclude,
     });
   }
 
@@ -151,9 +148,43 @@ export class OrdersController {
       throw new BadRequestException(
         'Only delivered orders are eligible for returns',
       );
-    if (order.returnRequest)
+    const activeReturns = await this.prisma.returnRequest.findMany({
+      where: { orderId: id, status: { not: ReturnStatus.REJECTED } },
+    });
+    if (dto.orderItemId) {
+      const item = await this.prisma.orderItem.findFirst({
+        where: { id: dto.orderItemId, orderId: id },
+        select: { id: true },
+      });
+      if (!item) {
+        throw new BadRequestException(
+          'orderItemId must belong to the selected order',
+        );
+      }
+      if (activeReturns.some((request) => !request.orderItemId)) {
+        throw new ConflictException(
+          'A full-order return already exists for this order',
+        );
+      }
+      if (
+        activeReturns.some((request) => request.orderItemId === dto.orderItemId)
+      ) {
+        throw new ConflictException(
+          'A return request already exists for this item',
+        );
+      }
+    } else if (activeReturns.length) {
       throw new ConflictException('A return request already exists');
-    return this.prisma.returnRequest.create({ data: { orderId: id, ...dto } });
+    }
+    const returnRequest = await this.prisma.returnRequest.create({
+      data: { orderId: id, ...dto },
+    });
+    await this.notifications.fanOutToActiveAdmins({
+      title: 'New return request',
+      body: `A return was requested for order ${order.orderNumber}.`,
+      data: { orderId: id, returnRequestId: returnRequest.id },
+    });
+    return returnRequest;
   }
 
   @Post(':id/refund')
@@ -166,8 +197,12 @@ export class OrdersController {
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
-  refund(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.stripe.refundDeliveredOrder(user, id);
+  refund(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: RefundOrderDto = {},
+  ) {
+    return this.stripe.refundDeliveredOrder(user, id, dto.returnRequestId);
   }
 
   @Patch(':id/status')
@@ -218,18 +253,19 @@ export class OrdersController {
           actorId: user.id,
         },
       });
-      await tx.notification.create({
-        data: {
-          userId: order.customerId,
+      await this.notifications.createForUser(
+        order.customerId,
+        {
           title: `Order ${dto.status.toLowerCase().replaceAll('_', ' ')}`,
           body: `Your order ${order.orderNumber} is now ${dto.status.toLowerCase().replaceAll('_', ' ')}.`,
           data: { orderId: id, status: dto.status },
         },
-      });
+        tx,
+      );
     });
     return this.prisma.order.findUniqueOrThrow({
       where: { id },
-      include: orderInclude,
+      include: orderDetailInclude,
     });
   }
 
@@ -266,7 +302,7 @@ export class OrdersController {
   private async authorizedOrder(user: AuthUser, id: string) {
     const order = await this.prisma.order.findUnique({
       where: { id },
-      include: { returnRequest: true },
+      include: { returnRequests: true },
     });
     if (!order) throw new NotFoundException('Order not found');
     if (user.role !== UserRole.ADMIN && order.customerId !== user.id)

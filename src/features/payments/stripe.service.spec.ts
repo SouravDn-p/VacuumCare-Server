@@ -1,0 +1,233 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+import { Prisma } from '../../../generated/prisma/client';
+import {
+  PaymentPurpose,
+  PaymentStatus,
+  QuoteStatus,
+  ReturnStatus,
+  UserRole,
+} from '../../../generated/prisma/enums';
+import type { AuthUser } from '../../common/auth/auth.types';
+import { PrismaService } from '../../database/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { StripeService } from './stripe.service';
+
+describe('StripeService service authorization totals', () => {
+  const customer: AuthUser = {
+    id: 'customer-1',
+    email: 'customer@example.com',
+    role: UserRole.CUSTOMER,
+  };
+  const payment = {
+    findFirst: jest.fn(),
+    findUnique: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  };
+  const transactionClient = { payment };
+  const prisma = {
+    $transaction: jest.fn(
+      (callback: (client: typeof transactionClient) => Promise<unknown>) =>
+        callback(transactionClient),
+    ),
+    serviceRequest: { findFirst: jest.fn() },
+    payment,
+    order: { findUnique: jest.fn() },
+    returnRequest: {
+      update: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
+    },
+  };
+  const notifications = {
+    fanOutToActiveAdmins: jest.fn(),
+  };
+  const paymentIntents = {
+    create: jest.fn(),
+  };
+  let service: StripeService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new StripeService(
+      prisma as unknown as PrismaService,
+      notifications as unknown as NotificationsService,
+    );
+    jest
+      .spyOn(service as unknown as { client: () => unknown }, 'client')
+      .mockReturnValue({ paymentIntents });
+    prisma.payment.findFirst.mockResolvedValue(null);
+    prisma.payment.create.mockResolvedValue({
+      id: 'payment-1',
+      idempotencyKey: 'key-1',
+    });
+    prisma.payment.update.mockResolvedValue({
+      id: 'payment-1',
+      amount: 175,
+      currency: 'cad',
+    });
+    paymentIntents.create.mockResolvedValue({
+      id: 'pi-1',
+      client_secret: 'secret',
+      status: 'requires_confirmation',
+    });
+  });
+
+  it('authorizes negotiatedTotal after customer quote acceptance', async () => {
+    prisma.serviceRequest.findFirst.mockResolvedValue({
+      quotation: {
+        id: 'quote-1',
+        status: QuoteStatus.ACCEPTED,
+        validUntil: new Date('2099-01-01T00:00:00.000Z'),
+        negotiatedTotal: 175,
+        totalAmount: 192.1,
+      },
+    });
+
+    await service.createServiceAuthorization(customer, 'request-1');
+
+    expect(prisma.payment.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ amount: 175 }),
+    });
+    expect(paymentIntents.create).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 17500 }),
+      expect.any(Object),
+    );
+  });
+
+  it('falls back to totalAmount when no negotiation was approved', async () => {
+    prisma.serviceRequest.findFirst.mockResolvedValue({
+      quotation: {
+        id: 'quote-1',
+        status: QuoteStatus.ACCEPTED,
+        validUntil: new Date('2099-01-01T00:00:00.000Z'),
+        negotiatedTotal: null,
+        totalAmount: 192.1,
+      },
+    });
+
+    await service.createServiceAuthorization(customer, 'request-1');
+
+    expect(prisma.payment.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ amount: 192.1 }),
+    });
+    expect(paymentIntents.create).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 19210 }),
+      expect.any(Object),
+    );
+  });
+
+  it('atomically persists authorization and its admin notification', async () => {
+    prisma.payment.findUnique.mockResolvedValue({
+      id: 'payment-1',
+      purpose: PaymentPurpose.QUOTATION,
+      stripePaymentIntentId: 'pi-1',
+      currency: 'cad',
+      amount: 175,
+      quotationId: 'quote-1',
+    });
+    prisma.payment.updateMany.mockResolvedValue({ count: 1 });
+
+    await (
+      service as unknown as {
+        authorizeServicePaymentIntent(intent: {
+          id: string;
+          amount: number;
+          currency: string;
+          metadata: { paymentId: string; requestId: string };
+        }): Promise<void>;
+      }
+    ).authorizeServicePaymentIntent({
+      id: 'pi-1',
+      amount: 17500,
+      currency: 'cad',
+      metadata: { paymentId: 'payment-1', requestId: 'request-1' },
+    });
+
+    expect(prisma.payment.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: PaymentStatus.AUTHORIZED }),
+      }),
+    );
+    expect(notifications.fanOutToActiveAdmins).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ paymentId: 'payment-1' }),
+      }),
+      transactionClient,
+    );
+  });
+
+  it('refunds only the item share for an item-scoped return', async () => {
+    const admin: AuthUser = {
+      id: 'admin-1',
+      email: 'admin@example.com',
+      role: UserRole.ADMIN,
+    };
+    const refunds = { create: jest.fn() };
+    jest
+      .spyOn(service as unknown as { client: () => unknown }, 'client')
+      .mockReturnValue({ refunds });
+    prisma.order.findUnique.mockResolvedValue({
+      id: 'order-1',
+      customerId: 'customer-1',
+      orderNumber: 'CC-1',
+      subtotal: 100,
+      tax: 13,
+      items: [{ id: 'item-1', quantity: 1, unitPrice: 40 }],
+      returnRequests: [
+        {
+          id: 'return-1',
+          status: ReturnStatus.APPROVED,
+          orderItemId: 'item-1',
+        },
+      ],
+      payments: [
+        {
+          id: 'payment-1',
+          purpose: PaymentPurpose.ORDER,
+          status: PaymentStatus.SUCCEEDED,
+          stripePaymentIntentId: 'pi-1',
+          amount: new Prisma.Decimal('113'),
+          refundedAmount: new Prisma.Decimal('0'),
+          currency: 'cad',
+        },
+      ],
+    });
+    refunds.create.mockResolvedValue({
+      id: 're-1',
+      status: 'succeeded',
+      amount: 4520,
+    });
+    prisma.returnRequest.findUniqueOrThrow.mockResolvedValue({
+      id: 'return-1',
+    });
+    const tx = {
+      payment: { update: jest.fn() },
+      returnRequest: { update: jest.fn() },
+      order: { update: jest.fn() },
+      orderStatusHistory: { create: jest.fn() },
+      notification: { create: jest.fn() },
+    };
+    prisma.$transaction.mockImplementationOnce(
+      (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+    );
+
+    await service.refundDeliveredOrder(admin, 'order-1', 'return-1');
+
+    expect(refunds.create).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 4520 }),
+      expect.objectContaining({
+        idempotencyKey: 'refund-payment-1-return-1',
+      }),
+    );
+    expect(tx.payment.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: PaymentStatus.PARTIALLY_REFUNDED,
+          refundedAmount: 45.2,
+        }),
+      }),
+    );
+    expect(tx.order.update).not.toHaveBeenCalled();
+  });
+});

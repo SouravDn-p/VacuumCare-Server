@@ -32,6 +32,9 @@ export class ProductResponseDto {
   @ApiProperty({ example: 'cm6f4m0xw0009s1a2b3c4d5e6' })
   id!: string;
 
+  @ApiPropertyOptional({ nullable: true, example: 'FILTER-HEPA-H700' })
+  sku!: string | null;
+
   @ApiProperty({ example: 'HEPA Replacement Filter' })
   name!: string;
 
@@ -85,6 +88,9 @@ export class ProductResponseDto {
 
   @ApiProperty({ example: true })
   isActive!: boolean;
+
+  @ApiProperty({ example: true })
+  taxable!: boolean;
 }
 
 export class ProductPageResponseDto {

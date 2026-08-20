@@ -35,6 +35,11 @@ export class CategoryDto {
 }
 
 export class ProductDto {
+  @ApiPropertyOptional({ example: 'FILTER-HEPA-H700' })
+  @IsOptional()
+  @IsString()
+  sku?: string;
+
   @ApiProperty({ example: 'HEPA Replacement Filter' })
   @IsString()
   name!: string;
@@ -105,6 +110,11 @@ export class ProductDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ default: true, example: true })
+  @IsOptional()
+  @IsBoolean()
+  taxable?: boolean;
 }
 
 export class UpdateProductDto extends PartialType(ProductDto) {}

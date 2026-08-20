@@ -152,6 +152,7 @@ export class CatalogController {
       type: 'object',
       required: ['name', 'description', 'category', 'price', 'stock'],
       properties: {
+        sku: { type: 'string' },
         name: { type: 'string' },
         description: { type: 'string' },
         category: { type: 'string' },
@@ -163,6 +164,7 @@ export class CatalogController {
         warranty: { type: 'string' },
         shippingInfo: { type: 'string' },
         isActive: { type: 'boolean' },
+        taxable: { type: 'boolean', default: true },
         images: {
           type: 'array',
           items: { type: 'string', format: 'binary' },
@@ -186,6 +188,7 @@ export class CatalogController {
     if (user.role !== UserRole.ADMIN) throw new ForbiddenException();
     return this.prisma.product.create({
       data: {
+        sku: this.optionalString(dto.sku),
         name: this.requiredString(dto.name, 'name'),
         description: this.requiredString(dto.description, 'description'),
         category: this.requiredString(dto.category, 'category'),
@@ -197,6 +200,7 @@ export class CatalogController {
         warranty: this.optionalString(dto.warranty),
         shippingInfo: this.optionalString(dto.shippingInfo),
         isActive: this.optionalBoolean(dto.isActive) ?? true,
+        taxable: this.optionalBoolean(dto.taxable) ?? true,
         imageUrls: await this.uploadProductMedia(files),
       },
     });
@@ -210,6 +214,7 @@ export class CatalogController {
     schema: {
       type: 'object',
       properties: {
+        sku: { type: 'string' },
         name: { type: 'string' },
         description: { type: 'string' },
         category: { type: 'string' },
@@ -221,6 +226,7 @@ export class CatalogController {
         warranty: { type: 'string' },
         shippingInfo: { type: 'string' },
         isActive: { type: 'boolean' },
+        taxable: { type: 'boolean' },
         images: {
           type: 'array',
           items: { type: 'string', format: 'binary' },
@@ -243,10 +249,13 @@ export class CatalogController {
     @UploadedFiles() files: Express.Multer.File[] = [],
   ) {
     if (user.role !== UserRole.ADMIN) throw new ForbiddenException();
-    const imageUrls = files.length ? await this.uploadProductMedia(files) : undefined;
+    const imageUrls = files.length
+      ? await this.uploadProductMedia(files)
+      : undefined;
     return this.prisma.product.update({
       where: { id },
       data: {
+        ...(dto.sku !== undefined ? { sku: this.optionalString(dto.sku) } : {}),
         ...(dto.name ? { name: this.requiredString(dto.name, 'name') } : {}),
         ...(dto.description
           ? { description: this.requiredString(dto.description, 'description') }
@@ -261,16 +270,23 @@ export class CatalogController {
           ? { stock: this.requiredInteger(dto.stock, 'stock') }
           : {}),
         ...(dto.slug ? { slug: this.optionalString(dto.slug) } : {}),
-        ...(dto.features ? { features: this.optionalStringArray(dto.features) } : {}),
+        ...(dto.features
+          ? { features: this.optionalStringArray(dto.features) }
+          : {}),
         ...(dto.specifications
           ? { specifications: this.optionalJson(dto.specifications) }
           : {}),
-        ...(dto.warranty ? { warranty: this.optionalString(dto.warranty) } : {}),
+        ...(dto.warranty
+          ? { warranty: this.optionalString(dto.warranty) }
+          : {}),
         ...(dto.shippingInfo
           ? { shippingInfo: this.optionalString(dto.shippingInfo) }
           : {}),
         ...(dto.isActive !== undefined
           ? { isActive: this.optionalBoolean(dto.isActive) }
+          : {}),
+        ...(dto.taxable !== undefined
+          ? { taxable: this.optionalBoolean(dto.taxable) }
           : {}),
         ...(imageUrls ? { imageUrls } : {}),
       },
@@ -280,7 +296,9 @@ export class CatalogController {
   private async uploadProductMedia(files: Express.Multer.File[]) {
     if (!files.length) return undefined;
     const urls = await Promise.all(
-      files.map((file) => this.cloudinary.uploadFile(file, 'vacumeCare/products')),
+      files.map((file) =>
+        this.cloudinary.uploadFile(file, 'vacumeCare/products'),
+      ),
     );
     return urls;
   }
@@ -293,13 +311,15 @@ export class CatalogController {
 
   private requiredNumber(value: string | string[] | undefined, field: string) {
     const parsed = Number(this.requiredString(value, field));
-    if (Number.isNaN(parsed)) throw new ForbiddenException(`${field} must be a number`);
+    if (Number.isNaN(parsed))
+      throw new ForbiddenException(`${field} must be a number`);
     return parsed;
   }
 
   private requiredInteger(value: string | string[] | undefined, field: string) {
     const parsed = Number(this.requiredString(value, field));
-    if (!Number.isInteger(parsed)) throw new ForbiddenException(`${field} must be an integer`);
+    if (!Number.isInteger(parsed))
+      throw new ForbiddenException(`${field} must be an integer`);
     return parsed;
   }
 
@@ -318,9 +338,11 @@ export class CatalogController {
     const raw = this.firstValue(value);
     if (!raw) return undefined;
     try {
-      const parsed = JSON.parse(raw);
+      const parsed: unknown = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed.map(String);
-    } catch {}
+    } catch {
+      // Fall through to comma-separated form data.
+    }
     return raw
       .split(',')
       .map((item) => item.trim())

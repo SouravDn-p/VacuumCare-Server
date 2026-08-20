@@ -9,7 +9,25 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { OrderStatus, ReturnStatus } from '../../../../generated/prisma/enums';
 
+export class RefundOrderDto {
+  @ApiPropertyOptional({
+    description:
+      'Required when the order has more than one approved or received return.',
+  })
+  @IsOptional()
+  @IsString()
+  returnRequestId?: string;
+}
+
 export class RequestReturnDto {
+  @ApiPropertyOptional({
+    description:
+      'Optional order item ID when returning one specific item from the order.',
+  })
+  @IsOptional()
+  @IsString()
+  orderItemId?: string;
+
   @ApiProperty({ example: 'Product arrived damaged.' })
   @IsString()
   @MaxLength(1000)
@@ -116,6 +134,7 @@ export class ReturnRequestResponseDto {
   @ApiProperty({ example: 'return-id' }) id!: string;
   @ApiProperty({ enum: ReturnStatus, enumName: 'ReturnStatus' })
   status!: ReturnStatus;
+  @ApiPropertyOptional({ nullable: true }) orderItemId!: string | null;
   @ApiProperty({ example: 'Product arrived damaged.' }) reason!: string;
   @ApiPropertyOptional({ nullable: true }) comments!: string | null;
   @ApiPropertyOptional({ nullable: true }) resolution!: string | null;
@@ -141,7 +160,7 @@ export class OrderResponseDto {
   @ApiProperty({ type: [OrderItemResponseDto] }) items!: OrderItemResponseDto[];
   @ApiProperty({ type: [OrderStatusHistoryResponseDto] })
   statusHistory!: OrderStatusHistoryResponseDto[];
-  @ApiPropertyOptional({ type: ReturnRequestResponseDto, nullable: true })
-  returnRequest!: ReturnRequestResponseDto | null;
+  @ApiProperty({ type: [ReturnRequestResponseDto] })
+  returnRequests!: ReturnRequestResponseDto[];
   @ApiProperty({ type: String, format: 'date-time' }) createdAt!: string;
 }

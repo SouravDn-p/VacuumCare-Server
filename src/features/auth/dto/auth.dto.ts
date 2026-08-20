@@ -69,6 +69,29 @@ export class SignupDto {
   termsVersion!: string;
 }
 
+export class AdminSignupDto {
+  @ApiProperty({ format: 'email', example: 'admin@example.com' })
+  @IsEmail()
+  email!: string;
+
+  @ApiProperty({ format: 'password', minLength: 8, example: 'secure-password' })
+  @MinLength(8)
+  password!: string;
+
+  @ApiProperty({ example: 'Jordan' })
+  @IsString()
+  firstName!: string;
+
+  @ApiProperty({ example: 'Lee' })
+  @IsString()
+  lastName!: string;
+
+  @ApiPropertyOptional({ example: '+1 416 555 0199' })
+  @IsOptional()
+  @IsString()
+  phone?: string;
+}
+
 export class TechnicianSignupDto extends SignupDto {
   @ApiProperty({ example: 'Greater Toronto Area' })
   @IsString()
@@ -145,7 +168,8 @@ export class ResetPasswordDto {
 
 export class RefreshTokenDto {
   @ApiProperty({
-    description: 'Opaque refresh token issued during login or after OTP verification.',
+    description:
+      'Opaque refresh token issued during login or after OTP verification.',
     example: '7bc1f1c3b5e44d68a5f4b18a6c2f6b0a...',
   })
   @IsString()

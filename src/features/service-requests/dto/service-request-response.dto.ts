@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   MediaKind,
+  QuoteCounterofferStatus,
   QuoteStatus,
   RequestStatus,
 } from '../../../../generated/prisma/enums';
@@ -25,16 +26,58 @@ export class ServiceRequestCatalogCategoryResponseDto {
   issues!: ServiceRequestCatalogIssueResponseDto[];
 }
 
+export class QuoteCounterofferStatusHistoryResponseDto {
+  @ApiProperty({
+    enum: QuoteCounterofferStatus,
+    enumName: 'QuoteCounterofferStatus',
+  })
+  status!: QuoteCounterofferStatus;
+  @ApiPropertyOptional({ nullable: true }) actorId!: string | null;
+  @ApiPropertyOptional({ nullable: true }) note!: string | null;
+  @ApiProperty({ type: String, format: 'date-time' }) createdAt!: string;
+}
+
+export class QuoteCounterofferResponseDto {
+  @ApiProperty({ example: 'counteroffer-id' }) id!: string;
+  @ApiProperty({ example: 'quote-id' }) quotationId!: string;
+  @ApiProperty({ example: 'customer-user-id' }) customerId!: string;
+  @ApiProperty({ example: 175 }) requestedTotal!: number;
+  @ApiPropertyOptional({ nullable: true }) note!: string | null;
+  @ApiProperty({
+    enum: QuoteCounterofferStatus,
+    enumName: 'QuoteCounterofferStatus',
+  })
+  status!: QuoteCounterofferStatus;
+  @ApiPropertyOptional({ nullable: true }) decidedById!: string | null;
+  @ApiPropertyOptional({ nullable: true }) decisionNote!: string | null;
+  @ApiPropertyOptional({ nullable: true, type: String, format: 'date-time' })
+  decidedAt!: string | null;
+  @ApiPropertyOptional({ nullable: true, type: String, format: 'date-time' })
+  supersededAt!: string | null;
+  @ApiProperty({ type: String, format: 'date-time' }) createdAt!: string;
+  @ApiProperty({ type: [QuoteCounterofferStatusHistoryResponseDto] })
+  statusHistory!: QuoteCounterofferStatusHistoryResponseDto[];
+}
+
 export class QuoteResponseDto {
   @ApiProperty({ example: 'quote-id' }) id!: string;
   @ApiProperty({ example: 'QT-AB12CD34' }) quoteNumber!: string;
   @ApiProperty({ example: 192.1 }) totalAmount!: number;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 175,
+    description:
+      'Approved negotiated total; effective only after customer quote acceptance.',
+  })
+  negotiatedTotal!: number | null;
   @ApiProperty({ enum: QuoteStatus, enumName: 'QuoteStatus' })
   status!: QuoteStatus;
   @ApiProperty({ type: String, format: 'date-time' }) validUntil!: string;
   @ApiPropertyOptional({ nullable: true, type: String, format: 'date-time' })
   acceptedAt!: string | null;
   @ApiPropertyOptional({ nullable: true }) notes!: string | null;
+  @ApiPropertyOptional({ type: [QuoteCounterofferResponseDto] })
+  counteroffers?: QuoteCounterofferResponseDto[];
 }
 
 export class InletCountResponseDto {

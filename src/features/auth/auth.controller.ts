@@ -2,6 +2,7 @@ import {
   Body,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Controller,
   Get,
   InternalServerErrorException,
@@ -17,6 +18,7 @@ import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -39,6 +41,7 @@ import {
   ResendVerificationDto,
   SignupDto,
   TechnicianSignupDto,
+  AdminSignupDto,
   VerifyEmailDto,
 } from './dto/auth.dto';
 import {
@@ -46,12 +49,14 @@ import {
   ForgotPasswordResponseDto,
   LogoutResponseDto,
   SignupResponseDto,
+  AdminCreatedUserResponseDto,
   ResendVerificationResponseDto,
   VerifyEmailResponseDto,
 } from './dto/auth-response.dto';
 import { UserProfileResponseDto } from '../users/dto/user-response.dto';
 import { EmailVerificationDeliveryService } from './email-verification-delivery.service';
 import { PasswordResetDeliveryService } from './password-reset-delivery.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 /** Generates a cryptographically random 5-digit OTP string (10000–99999). */
 function generateOtp(): string {
@@ -69,12 +74,15 @@ export class AuthController {
     private readonly jwt: JwtService,
     private readonly passwordResetDelivery: PasswordResetDeliveryService,
     private readonly emailVerificationDelivery: EmailVerificationDeliveryService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ─── Signup ──────────────────────────────────────────────────────────────────
 
   @Post('customer/signup')
-  @ApiOperation({ summary: 'Register a customer — always sends a 5-digit verification OTP' })
+  @ApiOperation({
+    summary: 'Register a customer — always sends a 5-digit verification OTP',
+  })
   @ApiCreatedResponse({ type: SignupResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiConflictResponse({
@@ -99,6 +107,64 @@ export class AuthController {
     return this.signup(dto, UserRole.TECHNICIAN);
   }
 
+  @Post('admin/signup')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Create an active administrator account (admin only)',
+    description:
+      'The first administrator is created by seed. Additional admins must be created by an authenticated administrator and can sign in immediately.',
+  })
+  @ApiCreatedResponse({ type: AdminCreatedUserResponseDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  @ApiConflictResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  async signupAdmin(
+    @CurrentUser() actor: AuthUser,
+    @Body() dto: AdminSignupDto,
+  ) {
+    if (actor.role !== UserRole.ADMIN)
+      throw new ForbiddenException(
+        'Only administrators can create admin users',
+      );
+
+    const email = dto.email.toLowerCase();
+    if (await this.prisma.user.findUnique({ where: { email } }))
+      throw new ConflictException('Email already registered');
+    if (
+      dto.phone &&
+      (await this.prisma.user.findUnique({ where: { phone: dto.phone } }))
+    )
+      throw new ConflictException('Phone number already registered');
+
+    const user = await this.prisma.user.create({
+      data: {
+        role: UserRole.ADMIN,
+        email,
+        passwordHash: await hash(dto.password, 12),
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        phone: dto.phone,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        firstName: true,
+        lastName: true,
+        isActive: true,
+      },
+    });
+    await this.notifications.fanOutToActiveAdmins({
+      title: 'Administrator added',
+      body: `${user.firstName} ${user.lastName} was granted admin access.`,
+      data: { userId: user.id },
+    });
+    return user;
+  }
+
   private async signup(dto: SignupDto | TechnicianSignupDto, role: UserRole) {
     if (!dto.acceptTerms)
       throw new BadRequestException(
@@ -113,7 +179,10 @@ export class AuthController {
     if (existingUser) {
       // If user exists but is not verified, provide helpful message
       if (!existingUser.isActive) {
-        await this.issueEmailVerificationOtp(existingUser.id, existingUser.email);
+        await this.issueEmailVerificationOtp(
+          existingUser.id,
+          existingUser.email,
+        );
         throw new ConflictException('Verification needed');
       }
       // If user exists and is verified
@@ -168,6 +237,14 @@ export class AuthController {
     });
 
     await this.issueEmailVerificationOtp(user.id, user.email);
+    await this.notifications.fanOutToActiveAdmins({
+      title:
+        role === UserRole.TECHNICIAN
+          ? 'New technician registration'
+          : 'New customer registration',
+      body: `${user.firstName} ${user.lastName} registered as a ${role.toLowerCase()}.`,
+      data: { userId: user.id, role },
+    });
 
     return {
       emailVerificationRequired: true,
@@ -210,7 +287,9 @@ export class AuthController {
     description: 'The refresh token is invalid, expired, or revoked.',
   })
   async refresh(@Body() dto: RefreshTokenDto) {
-    const tokenHash = createHash('sha256').update(dto.refreshToken).digest('hex');
+    const tokenHash = createHash('sha256')
+      .update(dto.refreshToken)
+      .digest('hex');
     const stored = await this.prisma.refreshToken.findFirst({
       where: {
         tokenHash,
@@ -237,7 +316,9 @@ export class AuthController {
     description: 'The refresh token is invalid, expired, or already revoked.',
   })
   async logout(@Body() dto: RefreshTokenDto) {
-    const tokenHash = createHash('sha256').update(dto.refreshToken).digest('hex');
+    const tokenHash = createHash('sha256')
+      .update(dto.refreshToken)
+      .digest('hex');
     const stored = await this.prisma.refreshToken.findFirst({
       where: { tokenHash, revokedAt: null },
     });
@@ -262,9 +343,9 @@ export class AuthController {
   async verifyEmail(@Body() dto: VerifyEmailDto) {
     const otpHash = createHash('sha256').update(dto.otp).digest('hex');
     const verification = await this.prisma.emailVerificationToken.findFirst({
-      where: { 
-        tokenHash: otpHash, 
-        usedAt: null, 
+      where: {
+        tokenHash: otpHash,
+        usedAt: null,
         expiresAt: { gt: new Date() },
         user: { email: dto.email.toLowerCase() },
       },
@@ -372,14 +453,15 @@ export class AuthController {
   async resetPassword(@Body() dto: ResetPasswordDto) {
     const otpHash = createHash('sha256').update(dto.otp).digest('hex');
     const reset = await this.prisma.passwordResetToken.findFirst({
-      where: { 
-        tokenHash: otpHash, 
-        usedAt: null, 
+      where: {
+        tokenHash: otpHash,
+        usedAt: null,
         expiresAt: { gt: new Date() },
         user: { email: dto.email.toLowerCase() },
       },
     });
-    if (!reset) throw new UnauthorizedException('Invalid or expired reset code');
+    if (!reset)
+      throw new UnauthorizedException('Invalid or expired reset code');
 
     await this.prisma.$transaction([
       this.prisma.user.update({
@@ -441,7 +523,9 @@ export class AuthController {
     try {
       await this.emailVerificationDelivery.send(email, otp);
     } catch {
-      await this.prisma.emailVerificationToken.delete({ where: { id: created.id } });
+      await this.prisma.emailVerificationToken.delete({
+        where: { id: created.id },
+      });
       throw new InternalServerErrorException(
         'Verification email could not be sent',
       );

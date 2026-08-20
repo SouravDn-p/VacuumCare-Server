@@ -39,7 +39,9 @@ import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { ApiErrorResponseDto } from '../../common/dto/api-response.dto';
 import { PrismaService } from '../../database/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { StripeService } from '../payments/stripe.service';
+import { CreateQuoteCounterofferDto } from './dto/quote-counteroffer.dto';
 import {
   AcceptQuoteDto,
   AssignTechnicianDto,
@@ -55,11 +57,13 @@ import {
 import {
   EquipmentResponseDto,
   QuoteResponseDto,
+  QuoteCounterofferResponseDto,
   ServiceRequestCatalogCategoryResponseDto,
   ServiceMediaResponseDto,
   ServiceReportResponseDto,
   ServiceRequestResponseDto,
 } from './dto/service-request-response.dto';
+import { QuoteCounterofferService } from './quote-counteroffer.service';
 
 const detailInclude = {
   customer: { omit: { passwordHash: true } },
@@ -68,7 +72,14 @@ const detailInclude = {
   issue: true,
   address: true,
   media: true,
-  quotation: true,
+  quotation: {
+    include: {
+      counteroffers: {
+        include: { statusHistory: { orderBy: { createdAt: 'asc' } } },
+        orderBy: { createdAt: 'desc' },
+      },
+    },
+  },
   report: true,
   equipment: { include: { inlets: true } },
   statusHistory: { orderBy: { createdAt: 'asc' } },
@@ -82,15 +93,6 @@ const CUSTOMER_CANCELLABLE = new Set<RequestStatus>([
   RequestStatus.SCHEDULED,
 ]);
 
-const CLOSED_REQUESTS = new Set<RequestStatus>([
-  RequestStatus.CANCELLED,
-  RequestStatus.COMPLETED,
-]);
-const RESPONDABLE_QUOTES = new Set<QuoteStatus>([
-  QuoteStatus.SENT,
-  QuoteStatus.VIEWED,
-]);
-
 @ApiTags('Service Requests')
 @ApiBearerAuth()
 @Controller('service-requests')
@@ -99,6 +101,8 @@ export class RequestsController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stripe: StripeService,
+    private readonly counteroffers: QuoteCounterofferService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   @Get('catalog')
@@ -177,15 +181,19 @@ export class RequestsController {
         },
       },
     });
-    await this.prisma.notification.create({
-      data: {
-        userId: user.id,
+    await Promise.all([
+      this.notifications.createForUser(user.id, {
         title: 'Service request received',
         body: `Request ${request.requestNumber} has been submitted for review.`,
         data: { requestId: request.id },
-      },
-    });
-    return this.withDetails(request.id);
+      }),
+      this.notifications.fanOutToActiveAdmins({
+        title: 'New service request',
+        body: `Request ${request.requestNumber} was submitted for review.`,
+        data: { requestId: request.id },
+      }),
+    ]);
+    return this.withDetails(request.id, user);
   }
 
   @Get()
@@ -229,7 +237,7 @@ export class RequestsController {
         data: { status: QuoteStatus.VIEWED, viewedAt: new Date() },
       });
     }
-    return this.withDetails(id);
+    return this.withDetails(id, user);
   }
 
   @Patch(':id/status')
@@ -276,7 +284,7 @@ export class RequestsController {
       startedAt:
         dto.status === RequestStatus.IN_PROGRESS ? new Date() : undefined,
     });
-    return this.withDetails(id);
+    return this.withDetails(id, user);
   }
 
   @Post(':id/cancel')
@@ -332,7 +340,7 @@ export class RequestsController {
         });
       }
     });
-    return this.withDetails(id);
+    return this.withDetails(id, user);
   }
 
   @Post(':id/assign')
@@ -450,7 +458,7 @@ export class RequestsController {
         ],
       });
     });
-    return this.withDetails(id);
+    return this.withDetails(id, user);
   }
 
   @Post(':id/quotation')
@@ -467,72 +475,7 @@ export class RequestsController {
     @Param('id') id: string,
     @Body() dto: CreateQuoteDto,
   ) {
-    this.admin(user);
-    const request = await this.prisma.serviceRequest.findUnique({
-      where: { id },
-      include: { quotation: true },
-    });
-    if (!request) throw new NotFoundException('Service request not found');
-    if (CLOSED_REQUESTS.has(request.status))
-      throw new BadRequestException('Cannot quote a closed request');
-    if (request.quotation?.status === QuoteStatus.ACCEPTED)
-      throw new ConflictException('Accepted quotations cannot be changed');
-    const validUntil = new Date(dto.validUntil);
-    if (validUntil <= new Date())
-      throw new BadRequestException('Quote expiry must be in the future');
-    const total = Number(
-      (
-        dto.laborAmount +
-        dto.partsAmount +
-        dto.taxAmount -
-        (dto.discountAmount ?? 0)
-      ).toFixed(2),
-    );
-    if (total < 0)
-      throw new BadRequestException('Quote total cannot be negative');
-    return this.prisma.$transaction(async (tx) => {
-      const quote = await tx.quotation.upsert({
-        where: { requestId: id },
-        create: {
-          requestId: id,
-          quoteNumber: this.quoteNumber(),
-          ...dto,
-          totalAmount: total,
-          status: QuoteStatus.SENT,
-          validUntil,
-        },
-        update: {
-          ...dto,
-          totalAmount: total,
-          status: QuoteStatus.SENT,
-          validUntil,
-          viewedAt: null,
-          rejectedAt: null,
-          cancelledAt: null,
-        },
-      });
-      await tx.serviceRequest.update({
-        where: { id },
-        data: { status: RequestStatus.QUOTE_SENT },
-      });
-      await tx.serviceRequestStatusHistory.create({
-        data: {
-          requestId: id,
-          status: RequestStatus.QUOTE_SENT,
-          actorId: user.id,
-          note: 'Quotation sent',
-        },
-      });
-      await tx.notification.create({
-        data: {
-          userId: request.customerId,
-          title: 'Your service quote is ready',
-          body: `Quote ${quote.quoteNumber} is ready to review.`,
-          data: { requestId: id, quoteId: quote.id },
-        },
-      });
-      return quote;
-    });
+    return this.counteroffers.createOrReviseQuote(user, id, dto);
   }
 
   @Post(':id/quotation/accept')
@@ -549,47 +492,39 @@ export class RequestsController {
     @Param('id') id: string,
     @Body() dto: AcceptQuoteDto,
   ) {
-    this.customer(user);
-    if (!dto.acceptTerms)
-      throw new BadRequestException(
-        'Terms consent is required to accept a quotation',
-      );
-    const request = await this.getAuthorized(user, id);
-    if (request.customerId !== user.id) throw new ForbiddenException();
-    return this.prisma.$transaction(async (tx) => {
-      const quote = await tx.quotation.findUnique({ where: { requestId: id } });
-      if (!quote || !RESPONDABLE_QUOTES.has(quote.status))
-        throw new BadRequestException('This quotation cannot be accepted');
-      if (quote.validUntil <= new Date()) {
-        await tx.quotation.update({
-          where: { id: quote.id },
-          data: { status: QuoteStatus.EXPIRED },
-        });
-        throw new BadRequestException('This quotation has expired');
-      }
-      const accepted = await tx.quotation.update({
-        where: { id: quote.id },
-        data: {
-          status: QuoteStatus.ACCEPTED,
-          acceptedAt: new Date(),
-          acceptanceTermsAt: new Date(),
-          acceptanceTermsVersion: dto.termsVersion,
-        },
-      });
-      await tx.serviceRequest.update({
-        where: { id },
-        data: { status: RequestStatus.ACCEPTED },
-      });
-      await tx.serviceRequestStatusHistory.create({
-        data: {
-          requestId: id,
-          status: RequestStatus.ACCEPTED,
-          actorId: user.id,
-          note: `Quote accepted; terms ${dto.termsVersion}`,
-        },
-      });
-      return accepted;
-    });
+    return this.counteroffers.acceptQuote(user, id, dto);
+  }
+
+  @Post(':id/quotation/counteroffers')
+  @ApiOperation({
+    summary: 'Submit a counteroffer for an owned unexpired quotation',
+    description:
+      'Creates one pending counteroffer. It does not accept the quotation or initiate Stripe.',
+  })
+  @ApiParam({ name: 'id', description: 'Service request ID' })
+  @ApiCreatedResponse({ type: QuoteCounterofferResponseDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  @ApiConflictResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  submitCounteroffer(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: CreateQuoteCounterofferDto,
+  ) {
+    return this.counteroffers.submit(user, id, dto);
+  }
+
+  @Get(':id/quotation/counteroffers')
+  @ApiOperation({
+    summary: 'Get counteroffer history for an authorized service request',
+  })
+  @ApiParam({ name: 'id', description: 'Service request ID' })
+  @ApiOkResponse({ type: QuoteCounterofferResponseDto, isArray: true })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  counterofferHistory(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.counteroffers.history(user, id);
   }
 
   @Post(':id/quotation/reject')
@@ -606,35 +541,7 @@ export class RequestsController {
     @Param('id') id: string,
     @Body() dto: RejectQuoteDto,
   ) {
-    this.customer(user);
-    const request = await this.getAuthorized(user, id);
-    if (request.customerId !== user.id) throw new ForbiddenException();
-    return this.prisma.$transaction(async (tx) => {
-      const quote = await tx.quotation.findUnique({ where: { requestId: id } });
-      if (!quote || !RESPONDABLE_QUOTES.has(quote.status))
-        throw new BadRequestException('This quotation cannot be rejected');
-      const rejected = await tx.quotation.update({
-        where: { id: quote.id },
-        data: {
-          status: QuoteStatus.REJECTED,
-          rejectedAt: new Date(),
-          notes: dto.reason ?? quote.notes,
-        },
-      });
-      await tx.serviceRequest.update({
-        where: { id },
-        data: { status: RequestStatus.UNDER_REVIEW },
-      });
-      await tx.serviceRequestStatusHistory.create({
-        data: {
-          requestId: id,
-          status: RequestStatus.UNDER_REVIEW,
-          actorId: user.id,
-          note: dto.reason ?? 'Quote rejected',
-        },
-      });
-      return rejected;
-    });
+    return this.counteroffers.rejectQuote(user, id, dto);
   }
 
   @Post(':id/media')
@@ -652,7 +559,15 @@ export class RequestsController {
     const request = await this.getAuthorized(user, id);
     this.validateMediaRole(user, request.technicianId, dto.kind);
     this.validateMime(dto.mimeType);
-    return this.prisma.serviceMedia.create({ data: { requestId: id, ...dto } });
+    const media = await this.prisma.serviceMedia.create({
+      data: { requestId: id, ...dto },
+    });
+    await this.notifications.fanOutToActiveAdmins({
+      title: 'Service request media added',
+      body: `New ${dto.kind.toLowerCase()} media was added to request ${request.requestNumber}.`,
+      data: { requestId: id, mediaId: media.id, kind: dto.kind },
+    });
+    return media;
   }
 
   @Post(':id/report')
@@ -721,14 +636,23 @@ export class RequestsController {
             note: 'Technician report submitted',
           },
         });
-        await tx.notification.create({
-          data: {
-            userId: request.customerId,
+        await this.notifications.createForUser(
+          request.customerId,
+          {
             title: 'Service report submitted',
             body: 'Your technician has submitted the service report for review.',
             data: { requestId: id },
           },
-        });
+          tx,
+        );
+        await this.notifications.fanOutToActiveAdmins(
+          {
+            title: 'Service report submitted',
+            body: `A technician submitted the report for request ${request.requestNumber}.`,
+            data: { requestId: id },
+          },
+          tx,
+        );
       }
       return report;
     });
@@ -757,6 +681,7 @@ export class RequestsController {
       where: { requestId: id, unitNumber: dto.unitNumber },
     });
     const data = {
+      customerId: request.customerId,
       manufacturer: dto.manufacturer,
       model: dto.model,
       serialNumber: dto.serialNumber,
@@ -818,10 +743,14 @@ export class RequestsController {
     });
   }
 
-  private async withDetails(id: string) {
+  private async withDetails(id: string, user: AuthUser) {
     const request = await this.prisma.serviceRequest.findUnique({
       where: { id },
-      include: detailInclude,
+      include: {
+        ...detailInclude,
+        quotation:
+          user.role === UserRole.TECHNICIAN ? true : detailInclude.quotation,
+      },
     });
     if (!request) throw new NotFoundException('Service request not found');
     return request;
@@ -886,9 +815,5 @@ export class RequestsController {
 
   private requestNumber() {
     return `SR-${randomUUID().replaceAll('-', '').slice(0, 10).toUpperCase()}`;
-  }
-
-  private quoteNumber() {
-    return `QT-${randomUUID().replaceAll('-', '').slice(0, 10).toUpperCase()}`;
   }
 }

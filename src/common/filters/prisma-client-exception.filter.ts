@@ -3,6 +3,10 @@ import { BaseExceptionFilter } from '@nestjs/core';
 import { Prisma } from '../../../generated/prisma/client';
 import { Response } from 'express';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 @Catch(Prisma.PrismaClientKnownRequestError)
 export class PrismaClientExceptionFilter extends BaseExceptionFilter {
   catch(exception: Prisma.PrismaClientKnownRequestError, host: ArgumentsHost) {
@@ -16,19 +20,31 @@ export class PrismaClientExceptionFilter extends BaseExceptionFilter {
         let fields: string[] = [];
         if (Array.isArray(exception.meta?.target)) {
           fields = exception.meta.target as string[];
-        } else if (
-          exception.meta?.driverAdapterError &&
-          typeof exception.meta.driverAdapterError === 'object' &&
-          (exception.meta.driverAdapterError as any).cause?.constraint?.fields
-        ) {
-          fields = (exception.meta.driverAdapterError as any).cause.constraint.fields;
+        } else {
+          const driverError = exception.meta?.driverAdapterError;
+          if (
+            isRecord(driverError) &&
+            isRecord(driverError.cause) &&
+            isRecord(driverError.cause.constraint) &&
+            Array.isArray(driverError.cause.constraint.fields) &&
+            driverError.cause.constraint.fields.every(
+              (field): field is string => typeof field === 'string',
+            )
+          ) {
+            fields = driverError.cause.constraint.fields;
+          }
         }
 
-        const fieldMessage = fields.length > 0 ? fields.join(', ') : 'unique constraint';
-        
+        const fieldMessage =
+          fields.length > 0 ? fields.join(', ') : 'unique constraint';
+        const modelName =
+          typeof exception.meta?.modelName === 'string'
+            ? exception.meta.modelName
+            : 'Record';
+
         response.status(status).json({
           statusCode: status,
-          message: `${exception.meta?.modelName || 'Record'} already exists. Conflict on: ${fieldMessage}.`,
+          message: `${modelName} already exists. Conflict on: ${fieldMessage}.`,
           error: 'Conflict',
         });
         break;

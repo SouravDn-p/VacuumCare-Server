@@ -3,21 +3,26 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiConflictResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import {
   OrderStatus,
   PaymentStatus,
+  QuoteCounterofferStatus,
   RequestStatus,
   UserRole,
 } from '../../../generated/prisma/enums';
@@ -26,9 +31,28 @@ import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { ApiErrorResponseDto } from '../../common/dto/api-response.dto';
 import { PrismaService } from '../../database/prisma.service';
-import { BroadcastNotificationDto } from './dto/admin.dto';
+import { DecideQuoteCounterofferDto } from '../service-requests/dto/quote-counteroffer.dto';
+import { QuoteCounterofferResponseDto } from '../service-requests/dto/service-request-response.dto';
+import { QuoteCounterofferService } from '../service-requests/quote-counteroffer.service';
+import { AdminDashboardService } from './admin-dashboard.service';
+import { AdminPaginationQueryDto } from './dto/admin-query.dto';
+import {
+  AdminDashboardDateQueryDto,
+  AdminDashboardDistributionQueryDto,
+  AdminDashboardLimitQueryDto,
+  AdminDashboardRangeQueryDto,
+  AdminDashboardScheduleQueryDto,
+  BroadcastNotificationDto,
+} from './dto/admin.dto';
 import {
   AdminDashboardResponseDto,
+  AdminDashboardSummaryResponseDto,
+  AdminPendingCounterofferQueueResponseDto,
+  AdminRecentOrderResponseDto,
+  AdminRecentServiceRequestResponseDto,
+  AdminRevenueSeriesResponseDto,
+  AdminScheduleItemResponseDto,
+  AdminServiceDistributionResponseDto,
   BroadcastNotificationResponseDto,
 } from './dto/admin-response.dto';
 
@@ -37,7 +61,11 @@ import {
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
 export class AdminController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly dashboardService: AdminDashboardService,
+    private readonly counteroffers: QuoteCounterofferService,
+  ) {}
 
   @Get('dashboard')
   @ApiOperation({
@@ -111,6 +139,152 @@ export class AdminController {
         requestGroups.map((group) => [group.status, group._count._all]),
       ),
     };
+  }
+
+  @Get('dashboard/summary')
+  @ApiOperation({
+    summary: 'Get the independent KPI cards for the admin dashboard',
+  })
+  @ApiOkResponse({ type: AdminDashboardSummaryResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  dashboardSummary(
+    @CurrentUser() user: AuthUser,
+    @Query() query: AdminDashboardDateQueryDto,
+  ) {
+    this.admin(user);
+    return this.dashboardService.summary(query);
+  }
+
+  @Get('dashboard/recent-service-requests')
+  @ApiOperation({ summary: 'Get recent service requests for the dashboard' })
+  @ApiOkResponse({
+    type: AdminRecentServiceRequestResponseDto,
+    isArray: true,
+  })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  recentServiceRequests(
+    @CurrentUser() user: AuthUser,
+    @Query() query: AdminDashboardLimitQueryDto,
+  ) {
+    this.admin(user);
+    return this.dashboardService.recentServiceRequests(query);
+  }
+
+  @Get('dashboard/schedule')
+  @ApiOperation({ summary: 'Get the admin schedule for one local date' })
+  @ApiOkResponse({ type: AdminScheduleItemResponseDto, isArray: true })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  schedule(
+    @CurrentUser() user: AuthUser,
+    @Query() query: AdminDashboardScheduleQueryDto,
+  ) {
+    this.admin(user);
+    return this.dashboardService.schedule(query);
+  }
+
+  @Get('dashboard/revenue')
+  @ApiOperation({
+    summary: 'Get monthly net service revenue for a local date range',
+  })
+  @ApiOkResponse({ type: AdminRevenueSeriesResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  revenue(
+    @CurrentUser() user: AuthUser,
+    @Query() query: AdminDashboardRangeQueryDto,
+  ) {
+    this.admin(user);
+    return this.dashboardService.revenue(query);
+  }
+
+  @Get('dashboard/service-distribution')
+  @ApiOperation({
+    summary: 'Get top service issues and an Others bucket',
+  })
+  @ApiOkResponse({ type: AdminServiceDistributionResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  serviceDistribution(
+    @CurrentUser() user: AuthUser,
+    @Query() query: AdminDashboardDistributionQueryDto,
+  ) {
+    this.admin(user);
+    return this.dashboardService.serviceDistribution(query);
+  }
+
+  @Get('dashboard/recent-orders')
+  @ApiOperation({ summary: 'Get recent store orders for the dashboard' })
+  @ApiOkResponse({ type: AdminRecentOrderResponseDto, isArray: true })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  recentOrders(
+    @CurrentUser() user: AuthUser,
+    @Query() query: AdminDashboardLimitQueryDto,
+  ) {
+    this.admin(user);
+    return this.dashboardService.recentOrders(query);
+  }
+
+  @Get('quote-counteroffers/pending')
+  @ApiOperation({
+    summary: 'List pending customer quote counteroffers (admin only)',
+  })
+  @ApiOkResponse({ type: AdminPendingCounterofferQueueResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  pendingCounteroffers(
+    @CurrentUser() user: AuthUser,
+    @Query() query: AdminPaginationQueryDto,
+  ) {
+    this.admin(user);
+    return this.counteroffers.pending(query.page, query.pageSize);
+  }
+
+  @Post('quote-counteroffers/:id/approve')
+  @ApiOperation({
+    summary: 'Approve a pending counteroffer without accepting the quote',
+    description:
+      'Sets the negotiated quote total only. The customer must still accept terms through the quotation acceptance endpoint; Stripe is not called.',
+  })
+  @ApiParam({ name: 'id', description: 'Quote counteroffer ID' })
+  @ApiCreatedResponse({ type: QuoteCounterofferResponseDto })
+  @ApiConflictResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  approveCounteroffer(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: DecideQuoteCounterofferDto,
+  ) {
+    return this.counteroffers.decide(
+      user,
+      id,
+      QuoteCounterofferStatus.APPROVED,
+      dto,
+    );
+  }
+
+  @Post('quote-counteroffers/:id/reject')
+  @ApiOperation({ summary: 'Reject a pending quote counteroffer (admin only)' })
+  @ApiParam({ name: 'id', description: 'Quote counteroffer ID' })
+  @ApiCreatedResponse({ type: QuoteCounterofferResponseDto })
+  @ApiConflictResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  rejectCounteroffer(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: DecideQuoteCounterofferDto,
+  ) {
+    return this.counteroffers.decide(
+      user,
+      id,
+      QuoteCounterofferStatus.REJECTED,
+      dto,
+    );
   }
 
   @Post('notifications/broadcast')

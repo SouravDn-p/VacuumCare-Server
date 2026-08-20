@@ -90,7 +90,8 @@ export class UsersController {
         avatar: {
           type: 'string',
           format: 'binary',
-          description: 'Profile picture — uploaded to Cloudinary; the returned URL is saved.',
+          description:
+            'Profile picture — uploaded to Cloudinary; the returned URL is saved.',
         },
       },
     },
@@ -106,7 +107,10 @@ export class UsersController {
   ) {
     let avatarUrl: string | undefined;
     if (avatar) {
-      avatarUrl = await this.cloudinary.uploadFile(avatar, 'vacuumCare/avatars');
+      avatarUrl = await this.cloudinary.uploadFile(
+        avatar,
+        'vacuumCare/avatars',
+      );
     }
     return this.prisma.user.update({
       where: { id: user.id },
