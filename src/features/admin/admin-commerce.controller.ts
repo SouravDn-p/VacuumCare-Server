@@ -30,7 +30,7 @@ import {
   AdminReturnRequestDto,
 } from './dto/admin-commerce-response.dto';
 
-@ApiTags('Admin Commerce')
+@ApiTags('Admin Products')
 @ApiBearerAuth()
 @Controller('admin')
 @UseGuards(JwtAuthGuard, AdminGuard)

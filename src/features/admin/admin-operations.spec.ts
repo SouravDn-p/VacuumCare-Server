@@ -6,10 +6,12 @@ import {
   UserRole,
 } from '../../../generated/prisma/enums';
 import { PrismaService } from '../../database/prisma.service';
-import { AdminEquipmentService } from './admin-equipment.service';
 import { AdminGuard } from './admin.guard';
-import { AdminPeopleService } from './admin-people.service';
-import { AdminServiceOperationsService } from './admin-service-operations.service';
+import { AdminCustomersService } from './customers/customers.service';
+import { AdminEquipmentService } from './equipment/equipment.service';
+import { AdminQuotationsService } from './quotations/quotations.service';
+import { AdminServiceRequestsService } from './service-requests/service-requests.service';
+import { AdminTechniciansService } from './technicians/technicians.service';
 
 describe('Admin operations contracts', () => {
   const prisma = {
@@ -39,12 +41,12 @@ describe('Admin operations contracts', () => {
   it('builds a paginated service-request query with all domain filters', async () => {
     prisma.serviceRequest.findMany.mockResolvedValue([]);
     prisma.serviceRequest.count.mockResolvedValue(0);
-    const service = new AdminServiceOperationsService(
+    const service = new AdminServiceRequestsService(
       prisma as unknown as PrismaService,
     );
 
     await expect(
-      service.serviceRequests({
+      service.list({
         page: 2,
         pageSize: 10,
         status: RequestStatus.SCHEDULED,
@@ -93,11 +95,11 @@ describe('Admin operations contracts', () => {
       },
     ]);
     prisma.quotation.count.mockResolvedValue(1);
-    const service = new AdminServiceOperationsService(
+    const service = new AdminQuotationsService(
       prisma as unknown as PrismaService,
     );
 
-    const result = await service.quotations({ page: 1, pageSize: 25 });
+    const result = await service.list({ page: 1, pageSize: 25 });
 
     expect(result.items[0]).toEqual(
       expect.objectContaining({
@@ -143,10 +145,12 @@ describe('Admin operations contracts', () => {
   it('includes customer addresses in admin people search', async () => {
     prisma.user.findMany.mockResolvedValue([]);
     prisma.user.count.mockResolvedValue(0);
-    const service = new AdminPeopleService(prisma as unknown as PrismaService);
+    const service = new AdminCustomersService(
+      prisma as unknown as PrismaService,
+    );
 
     await expect(
-      service.customers({ page: 1, pageSize: 25, search: 'Toronto' }),
+      service.list({ page: 1, pageSize: 25, search: 'Toronto' }),
     ).resolves.toEqual({ items: [], total: 0, page: 1, pageSize: 25 });
 
     expect(prisma.user.findMany).toHaveBeenCalledWith(
@@ -182,9 +186,11 @@ describe('Admin operations contracts', () => {
       _count: { assignedRequests: 2 },
       assignedRequests: [{ id: 'request-1' }],
     });
-    const service = new AdminPeopleService(prisma as unknown as PrismaService);
+    const service = new AdminTechniciansService(
+      prisma as unknown as PrismaService,
+    );
 
-    await expect(service.technician('user-1', 'UTC')).resolves.toEqual(
+    await expect(service.get('user-1', 'UTC')).resolves.toEqual(
       expect.objectContaining({
         id: 'user-1',
         profileId: 'profile-1',
