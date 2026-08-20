@@ -34,6 +34,8 @@ import {
   CheckoutSessionResponseDto,
   CreateCartCheckoutDto,
   CreateOrderCheckoutDto,
+  PreviewCheckoutDto,
+  CheckoutPreviewResponseDto,
   ServiceAuthorizationResponseDto,
   StripePaymentResponseDto,
   StripeWebhookReceiptDto,
@@ -46,6 +48,24 @@ import { StripeService } from './stripe.service';
 @UseGuards(JwtAuthGuard)
 export class CheckoutController {
   constructor(private readonly stripe: StripeService) {}
+
+  @Post('preview')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Preview order totals without reserving inventory',
+    description:
+      'Use for the cart/Buy Now summary before opening Stripe. Omit items to preview the saved cart. Pass shippingAddressId to confirm the address that checkout will use.',
+  })
+  @ApiOkResponse({ type: CheckoutPreviewResponseDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  previewCheckout(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: PreviewCheckoutDto,
+  ) {
+    return this.stripe.previewCheckout(user, dto);
+  }
 
   @Post('orders')
   @ApiOperation({

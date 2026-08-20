@@ -84,7 +84,7 @@ export class CatalogController {
   @ApiOperation({
     summary: 'Search and browse active shop products',
     description:
-      'Supports store filters: search (name/SKU), categories, price range, in-stock only, sort, and pagination.',
+      'Customer storefront list. Supports store filters: search (name/SKU), categories, price range, in-stock only, sort, and pagination.',
   })
   @ApiOkResponse({ type: ProductPageResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })

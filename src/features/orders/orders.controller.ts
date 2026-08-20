@@ -5,6 +5,8 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  HttpCode,
+  HttpStatus,
   NotFoundException,
   Param,
   Patch,
@@ -35,10 +37,13 @@ import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { ApiErrorResponseDto } from '../../common/dto/api-response.dto';
 import { PrismaService } from '../../database/prisma.service';
+import { CartService } from '../cart/cart.service';
+import { CartResponseDto } from '../cart/dto/cart-response.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { StripeService } from '../payments/stripe.service';
 import {
   CustomerOrderQueryDto,
+  CustomerReturnResponseDto,
   OrderPageResponseDto,
   OrderResponseDto,
   RequestReturnDto,
@@ -79,6 +84,7 @@ export class OrdersController {
     private readonly prisma: PrismaService,
     private readonly stripe: StripeService,
     private readonly notifications: NotificationsService,
+    private readonly cart: CartService,
   ) {}
 
   @Get()
@@ -131,12 +137,34 @@ export class OrdersController {
     };
   }
 
+  @Get('returns')
+  @ApiOperation({
+    summary: 'List return requests for the authenticated customer',
+  })
+  @ApiOkResponse({ type: CustomerReturnResponseDto, isArray: true })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  async listReturns(@CurrentUser() user: AuthUser) {
+    const requests = await this.prisma.returnRequest.findMany({
+      where:
+        user.role === UserRole.ADMIN ? {} : { order: { customerId: user.id } },
+      include: {
+        order: { select: { orderNumber: true, status: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return requests.map(({ order, ...request }) => ({
+      ...request,
+      orderNumber: order.orderNumber,
+      orderStatus: order.status,
+    }));
+  }
+
   @Get(':id')
   @ApiOperation({
     summary:
       'Get an order, delivery timeline, payment status, and return eligibility',
   })
-  @ApiParam({ name: 'id', description: 'Order ID' })
+  @ApiParam({ name: 'id', description: 'Order ID or order number (CC-...)' })
   @ApiOkResponse({ type: OrderResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
@@ -149,11 +177,25 @@ export class OrdersController {
     return mapCustomerOrder(detail);
   }
 
+  @Get(':id/returns')
+  @ApiOperation({ summary: 'List return requests for one order' })
+  @ApiParam({ name: 'id', description: 'Order ID or order number (CC-...)' })
+  @ApiOkResponse({ type: ReturnRequestResponseDto, isArray: true })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  async orderReturns(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const order = await this.authorizedOrder(user, id);
+    return this.prisma.returnRequest.findMany({
+      where: { orderId: order.id },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   @Post(':id/cancel')
   @ApiOperation({
     summary: 'Cancel an unpaid hosted Checkout order and release its inventory',
   })
-  @ApiParam({ name: 'id', description: 'Order ID' })
+  @ApiParam({ name: 'id', description: 'Order ID or order number (CC-...)' })
   @ApiOkResponse({ type: OrderResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiConflictResponse({
@@ -162,13 +204,44 @@ export class OrdersController {
   })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
-  cancel(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.stripe.cancelPendingOrder(user, id);
+  async cancel(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const order = await this.authorizedOrder(user, id);
+    const cancelled = await this.stripe.cancelPendingOrder(user, order.id);
+    return mapCustomerOrder(cancelled);
+  }
+
+  @Post(':id/reorder')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Add this order’s products back to the cart',
+    description:
+      'Merges quantities with the current cart and caps each line at available stock. Inactive or out-of-stock products are skipped.',
+  })
+  @ApiParam({ name: 'id', description: 'Order ID or order number (CC-...)' })
+  @ApiOkResponse({ type: CartResponseDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  async reorder(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    if (user.role !== UserRole.CUSTOMER)
+      throw new ForbiddenException('Only customers can reorder');
+    const order = await this.authorizedOrder(user, id);
+    const detail = await this.prisma.order.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { items: true },
+    });
+    return this.cart.addFromOrder(
+      user,
+      detail.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+      })),
+    );
   }
 
   @Post(':id/return')
   @ApiOperation({ summary: 'Request a return for a delivered order' })
-  @ApiParam({ name: 'id', description: 'Order ID' })
+  @ApiParam({ name: 'id', description: 'Order ID or order number (CC-...)' })
   @ApiCreatedResponse({ type: ReturnRequestResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiConflictResponse({
@@ -190,11 +263,11 @@ export class OrdersController {
         'Only delivered orders are eligible for returns',
       );
     const activeReturns = await this.prisma.returnRequest.findMany({
-      where: { orderId: id, status: { not: ReturnStatus.REJECTED } },
+      where: { orderId: order.id, status: { not: ReturnStatus.REJECTED } },
     });
     if (dto.orderItemId) {
       const item = await this.prisma.orderItem.findFirst({
-        where: { id: dto.orderItemId, orderId: id },
+        where: { id: dto.orderItemId, orderId: order.id },
         select: { id: true },
       });
       if (!item) {
@@ -218,12 +291,12 @@ export class OrdersController {
       throw new ConflictException('A return request already exists');
     }
     const returnRequest = await this.prisma.returnRequest.create({
-      data: { orderId: id, ...dto },
+      data: { orderId: order.id, ...dto },
     });
     await this.notifications.fanOutToActiveAdmins({
       title: 'New return request',
       body: `A return was requested for order ${order.orderNumber}.`,
-      data: { orderId: id, returnRequestId: returnRequest.id },
+      data: { orderId: order.id, returnRequestId: returnRequest.id },
     });
     return returnRequest;
   }
@@ -341,9 +414,11 @@ export class OrdersController {
     return this.prisma.returnRequest.update({ where: { id }, data: dto });
   }
 
-  private async authorizedOrder(user: AuthUser, id: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
+  private async authorizedOrder(user: AuthUser, idOrNumber: string) {
+    const order = await this.prisma.order.findFirst({
+      where: {
+        OR: [{ id: idOrNumber }, { orderNumber: idOrNumber }],
+      },
       include: { returnRequests: true },
     });
     if (!order) throw new NotFoundException('Order not found');

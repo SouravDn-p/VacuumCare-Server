@@ -175,6 +175,19 @@ export class UsersController {
     });
   }
 
+  @Get('me/addresses')
+  @ApiOperation({
+    summary: 'List saved addresses for checkout and service requests',
+  })
+  @ApiOkResponse({ type: AddressResponseDto, isArray: true })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  addresses(@CurrentUser() user: AuthUser) {
+    return this.prisma.address.findMany({
+      where: { userId: user.id },
+      orderBy: [{ isPrimary: 'desc' }, { line1: 'asc' }],
+    });
+  }
+
   @Post('me/addresses')
   @ApiOperation({ summary: 'Add an address for the authenticated user' })
   @ApiCreatedResponse({ type: AddressResponseDto })

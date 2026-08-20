@@ -184,6 +184,7 @@ export class OrderStatusHistoryResponseDto {
 
 export class ReturnRequestResponseDto {
   @ApiProperty({ example: 'return-id' }) id!: string;
+  @ApiProperty({ example: 'order-id' }) orderId!: string;
   @ApiProperty({ enum: ReturnStatus, enumName: 'ReturnStatus' })
   status!: ReturnStatus;
   @ApiPropertyOptional({ nullable: true }) orderItemId!: string | null;
@@ -193,6 +194,13 @@ export class ReturnRequestResponseDto {
   @ApiPropertyOptional({ nullable: true }) adminNotes!: string | null;
   @ApiPropertyOptional({ nullable: true, format: 'uri' }) returnLabelUrl!:
     string | null;
+  @ApiProperty({ type: String, format: 'date-time' }) createdAt!: string;
+}
+
+export class CustomerReturnResponseDto extends ReturnRequestResponseDto {
+  @ApiProperty({ example: 'CC-90422' }) orderNumber!: string;
+  @ApiProperty({ enum: OrderStatus, enumName: 'OrderStatus' })
+  orderStatus!: OrderStatus;
 }
 
 export class OrderShippingAddressDto {

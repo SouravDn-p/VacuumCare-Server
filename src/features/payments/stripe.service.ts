@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import Stripe from 'stripe';
+import { Prisma } from '../../../generated/prisma/client';
 import {
   OrderStatus,
   PaymentPurpose,
@@ -23,7 +24,10 @@ import { NotificationsService } from '../notifications/notifications.service';
 import type {
   CreateCartCheckoutDto,
   CreateOrderCheckoutDto,
+  PreviewCheckoutDto,
 } from './dto/checkout.dto';
+import { checkoutCurrency, quoteOrderTotals } from './order-pricing';
+import { orderDetailInclude } from '../orders/order-detail';
 
 @Injectable()
 export class StripeService {
@@ -40,12 +44,7 @@ export class StripeService {
   }
 
   private currency(): string {
-    const currency = (process.env.STRIPE_CURRENCY ?? 'cad').toLowerCase();
-    if (!/^[a-z]{3}$/.test(currency))
-      throw new InternalServerErrorException(
-        'STRIPE_CURRENCY must be an ISO 4217 currency code',
-      );
-    return currency;
+    return checkoutCurrency();
   }
 
   private clientUrl(): string {
@@ -55,15 +54,6 @@ export class StripeService {
         'CLIENT_APP_URL is required for Checkout',
       );
     return value.replace(/\/$/, '');
-  }
-
-  private taxRate(): number {
-    const rate = Number(process.env.TAX_RATE ?? 0.14975);
-    if (!Number.isFinite(rate) || rate < 0 || rate > 1)
-      throw new InternalServerErrorException(
-        'TAX_RATE must be a decimal between 0 and 1',
-      );
-    return rate;
   }
 
   async createOrderCheckout(user: AuthUser, dto: CreateOrderCheckoutDto) {
@@ -127,18 +117,13 @@ export class StripeService {
         quantity: quantities.get(product.id)!,
         unitPrice: product.price,
       }));
-      const subtotal = items.reduce(
-        (sum, item) => sum + Number(item.unitPrice) * item.quantity,
-        0,
+      const totals = quoteOrderTotals(
+        products.map((product) => ({
+          price: Number(product.price),
+          quantity: quantities.get(product.id)!,
+          taxable: product.taxable,
+        })),
       );
-      const taxableSubtotal = products.reduce(
-        (sum, product) =>
-          product.taxable
-            ? sum + Number(product.price) * quantities.get(product.id)!
-            : sum,
-        0,
-      );
-      const tax = Number((taxableSubtotal * this.taxRate()).toFixed(2));
       const order = await tx.order.create({
         data: {
           orderNumber: `CC-${randomUUID().replaceAll('-', '').slice(0, 10).toUpperCase()}`,
@@ -152,9 +137,9 @@ export class StripeService {
             zipCode: address.zipCode,
             country: address.country,
           },
-          subtotal,
-          tax,
-          total: subtotal + tax,
+          subtotal: totals.subtotal,
+          tax: totals.tax,
+          total: totals.total,
           inventoryReservedAt: new Date(),
           items: { create: items },
           statusHistory: {
@@ -286,6 +271,99 @@ export class StripeService {
         quantity: item.quantity,
       })),
     });
+  }
+
+  async previewCheckout(user: AuthUser, dto: PreviewCheckoutDto) {
+    if (user.role !== UserRole.CUSTOMER)
+      throw new ForbiddenException('Only customers can checkout');
+
+    const quantities = new Map<string, number>();
+    let source: 'cart' | 'items' = 'items';
+    if (dto.items) {
+      if (!dto.items.length)
+        throw new BadRequestException('Checkout requires at least one item');
+      for (const item of dto.items)
+        quantities.set(
+          item.productId,
+          (quantities.get(item.productId) ?? 0) + item.quantity,
+        );
+    } else {
+      source = 'cart';
+      const cart = await this.prisma.cart.findUnique({
+        where: { customerId: user.id },
+        include: { items: true },
+      });
+      if (!cart?.items.length) throw new BadRequestException('Cart is empty');
+      for (const item of cart.items)
+        quantities.set(item.productId, item.quantity);
+    }
+
+    const address = dto.shippingAddressId
+      ? await this.prisma.address.findFirst({
+          where: { id: dto.shippingAddressId, userId: user.id },
+        })
+      : await this.prisma.address.findFirst({
+          where: { userId: user.id, isPrimary: true },
+        });
+    if (dto.shippingAddressId && !address)
+      throw new ForbiddenException(
+        'Shipping address does not belong to the customer',
+      );
+
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: [...quantities.keys()] }, isActive: true },
+    });
+    if (products.length !== quantities.size)
+      throw new NotFoundException('One or more products are unavailable');
+    for (const product of products) {
+      const quantity = quantities.get(product.id)!;
+      if (product.stock < quantity)
+        throw new BadRequestException(
+          `${product.name} no longer has enough stock`,
+        );
+    }
+
+    const items = products.map((product) => {
+      const quantity = quantities.get(product.id)!;
+      const unitPrice = Number(product.price);
+      return {
+        productId: product.id,
+        name: product.name,
+        quantity,
+        unitPrice,
+        lineTotal: Number((unitPrice * quantity).toFixed(2)),
+        taxable: product.taxable,
+        inStock: product.stock > 0,
+        availableStock: product.stock,
+        tagline: product.features[0] ?? null,
+        imageUrls: product.imageUrls,
+      };
+    });
+    return {
+      source,
+      items,
+      itemCount: items.reduce((count, item) => count + item.quantity, 0),
+      currency: this.currency(),
+      shippingAddress: address
+        ? {
+            id: address.id,
+            line1: address.line1,
+            apartment: address.apartment,
+            city: address.city,
+            state: address.state,
+            zipCode: address.zipCode,
+            country: address.country,
+            isPrimary: address.isPrimary,
+          }
+        : null,
+      ...quoteOrderTotals(
+        items.map((item) => ({
+          price: item.unitPrice,
+          quantity: item.quantity,
+          taxable: item.taxable,
+        })),
+      ),
+    };
   }
 
   async createServiceAuthorization(user: AuthUser, requestId: string) {
@@ -513,12 +591,7 @@ export class StripeService {
     );
     return this.prisma.order.findUniqueOrThrow({
       where: { id: orderId },
-      include: {
-        items: { include: { product: true } },
-        returnRequests: true,
-        statusHistory: { orderBy: { createdAt: 'asc' } },
-        payments: true,
-      },
+      include: orderDetailInclude,
     });
   }
 
@@ -774,7 +847,7 @@ export class StripeService {
     await this.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUnique({
         where: { stripeCheckoutSessionId: session.id },
-        include: { order: true },
+        include: { order: { include: { items: true } } },
       });
       if (!payment?.orderId || payment.purpose !== PaymentPurpose.ORDER)
         throw new NotFoundException('Order payment not found');
@@ -832,7 +905,39 @@ export class StripeService {
         },
         tx,
       );
+      if (payment.order?.items.length) {
+        await this.removePurchasedItemsFromCart(
+          tx,
+          payment.userId,
+          payment.order.items,
+        );
+      }
     });
+  }
+
+  private async removePurchasedItemsFromCart(
+    tx: Pick<Prisma.TransactionClient, 'cart' | 'cartItem'>,
+    userId: string,
+    items: { productId: string; quantity: number }[],
+  ) {
+    const cart = await tx.cart.findUnique({ where: { customerId: userId } });
+    if (!cart) return;
+    for (const item of items) {
+      const cartItem = await tx.cartItem.findUnique({
+        where: {
+          cartId_productId: { cartId: cart.id, productId: item.productId },
+        },
+      });
+      if (!cartItem) continue;
+      if (cartItem.quantity <= item.quantity) {
+        await tx.cartItem.delete({ where: { id: cartItem.id } });
+      } else {
+        await tx.cartItem.update({
+          where: { id: cartItem.id },
+          data: { quantity: cartItem.quantity - item.quantity },
+        });
+      }
+    }
   }
 
   /**

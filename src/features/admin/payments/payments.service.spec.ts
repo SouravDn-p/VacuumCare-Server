@@ -6,6 +6,7 @@ import {
   UserRole,
 } from '../../../../generated/prisma/enums';
 import { PrismaService } from '../../../database/prisma.service';
+import { CartService } from '../../cart/cart.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { OrdersController } from '../../orders/orders.controller';
 import { StripeService } from '../../payments/stripe.service';
@@ -21,7 +22,7 @@ describe('AdminPaymentsService', () => {
       count: jest.fn(),
       findUnique: jest.fn(),
     },
-    order: { findUnique: jest.fn() },
+    order: { findUnique: jest.fn(), findFirst: jest.fn() },
     orderItem: { findFirst: jest.fn() },
     returnRequest: { create: jest.fn(), findMany: jest.fn() },
   };
@@ -64,7 +65,7 @@ describe('AdminPaymentsService', () => {
   });
 
   it('rejects an order item from a different order on customer return', async () => {
-    prisma.order.findUnique.mockResolvedValue({
+    prisma.order.findFirst.mockResolvedValue({
       id: 'order-1',
       customerId: 'customer-1',
       status: OrderStatus.DELIVERED,
@@ -75,6 +76,7 @@ describe('AdminPaymentsService', () => {
       prisma as unknown as PrismaService,
       {} as StripeService,
       {} as NotificationsService,
+      {} as CartService,
     );
 
     await expect(

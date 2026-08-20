@@ -5,6 +5,7 @@ import {
   UserRole,
 } from '../../../generated/prisma/enums';
 import { PrismaService } from '../../database/prisma.service';
+import { CartService } from '../cart/cart.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { StripeService } from '../payments/stripe.service';
 import { OrdersController } from './orders.controller';
@@ -20,6 +21,10 @@ describe('OrdersController customer My Orders', () => {
       count: jest.fn(),
       findUnique: jest.fn(),
       findUniqueOrThrow: jest.fn(),
+      findFirst: jest.fn(),
+    },
+    returnRequest: {
+      findMany: jest.fn(),
     },
   };
 
@@ -58,6 +63,7 @@ describe('OrdersController customer My Orders', () => {
       prisma as unknown as PrismaService,
       {} as StripeService,
       {} as NotificationsService,
+      {} as CartService,
     );
 
     const result = await controller.list(
@@ -99,6 +105,49 @@ describe('OrdersController customer My Orders', () => {
             ],
           },
         }),
+      }),
+    );
+  });
+
+  it('lists the customer return requests with order numbers', async () => {
+    prisma.returnRequest.findMany.mockResolvedValue([
+      {
+        id: 'return-1',
+        orderId: 'order-1',
+        status: 'REQUESTED',
+        orderItemId: null,
+        reason: 'Damaged in transit',
+        comments: null,
+        resolution: null,
+        adminNotes: null,
+        returnLabelUrl: null,
+        createdAt: new Date('2026-04-26T12:00:00.000Z'),
+        order: { orderNumber: 'CC-90422', status: OrderStatus.DELIVERED },
+      },
+    ]);
+    const controller = new OrdersController(
+      prisma as unknown as PrismaService,
+      {} as StripeService,
+      {} as NotificationsService,
+      {} as CartService,
+    );
+
+    await expect(
+      controller.listReturns({
+        id: 'customer-1',
+        email: 'customer@example.com',
+        role: UserRole.CUSTOMER,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 'return-1',
+        orderNumber: 'CC-90422',
+        orderStatus: OrderStatus.DELIVERED,
+      }),
+    ]);
+    expect(prisma.returnRequest.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { order: { customerId: 'customer-1' } },
       }),
     );
   });
