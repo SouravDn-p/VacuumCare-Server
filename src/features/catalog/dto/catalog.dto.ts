@@ -1,16 +1,42 @@
-import { PartialType } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
+  IsEnum,
   IsInt,
   IsNumber,
   IsObject,
   IsOptional,
   IsString,
+  Max,
   Min,
 } from 'class-validator';
+
+export enum ProductSort {
+  POPULARITY = 'popularity',
+  PRICE_ASC = 'price_asc',
+  PRICE_DESC = 'price_desc',
+  NEWEST = 'newest',
+  NAME = 'name',
+}
+
+function optionalBoolean(value: unknown): unknown {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (value === true || value === 'true' || value === '1') return true;
+  if (value === false || value === 'false' || value === '0') return false;
+  return value;
+}
+
+function stringList(value: unknown): unknown {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value !== 'string') return undefined;
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 export class CategoryDto {
   @ApiProperty({ example: 'Central Vacuum Repair' })
@@ -120,7 +146,10 @@ export class ProductDto {
 export class UpdateProductDto extends PartialType(ProductDto) {}
 
 export class ProductQueryDto {
-  @ApiPropertyOptional({ example: 'filter' })
+  @ApiPropertyOptional({
+    example: 'FILTER-HEPA',
+    description: 'Search name, SKU, description, or category.',
+  })
   @IsOptional()
   @IsString()
   search?: string;
@@ -129,6 +158,48 @@ export class ProductQueryDto {
   @IsOptional()
   @IsString()
   category?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['Vacuum', 'Accessories'],
+    description: 'One or more store categories. Comma-separated values work.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => stringList(value))
+  @IsArray()
+  @IsString({ each: true })
+  categories?: string[];
+
+  @ApiPropertyOptional({ minimum: 0, example: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  minPrice?: number;
+
+  @ApiPropertyOptional({ minimum: 0, example: 1000 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  maxPrice?: number;
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    description: 'When true, only products with stock greater than zero.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => optionalBoolean(value))
+  @IsBoolean()
+  inStockOnly?: boolean;
+
+  @ApiPropertyOptional({
+    enum: ProductSort,
+    default: ProductSort.POPULARITY,
+  })
+  @IsOptional()
+  @IsEnum(ProductSort)
+  sort?: ProductSort;
 
   @ApiPropertyOptional({ minimum: 1, default: 1 })
   @IsOptional()
@@ -142,5 +213,6 @@ export class ProductQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100)
   pageSize?: number;
 }

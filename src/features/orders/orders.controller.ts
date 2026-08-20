@@ -9,6 +9,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -23,6 +24,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { Prisma } from '../../../generated/prisma/client';
 import {
   OrderStatus,
   ReturnStatus,
@@ -36,6 +38,8 @@ import { PrismaService } from '../../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { StripeService } from '../payments/stripe.service';
 import {
+  CustomerOrderQueryDto,
+  OrderPageResponseDto,
   OrderResponseDto,
   RequestReturnDto,
   RefundOrderDto,
@@ -44,6 +48,7 @@ import {
   UpdateReturnStatusDto,
 } from './dto/orders.dto';
 import { orderDetailInclude } from './order-detail';
+import { customerOrderStatuses, mapCustomerOrder } from './order-view';
 
 const ALLOWED_ORDER_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   PAYMENT_PENDING: [],
@@ -78,23 +83,58 @@ export class OrdersController {
 
   @Get()
   @ApiOperation({
-    summary:
-      'List orders for the authenticated customer, or all orders for an admin',
+    summary: 'List store orders for the authenticated customer',
+    description:
+      'Admins see every order. Use group=active|complete for the My Orders tabs. Each item includes tracking timeline, shipping address, and action flags.',
   })
-  @ApiOkResponse({ type: OrderResponseDto, isArray: true })
+  @ApiOkResponse({ type: OrderPageResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
-  list(@CurrentUser() user: AuthUser) {
-    return this.prisma.order.findMany({
-      where: user.role === UserRole.ADMIN ? {} : { customerId: user.id },
-      include: orderDetailInclude,
-      orderBy: { createdAt: 'desc' },
-    });
+  async list(
+    @CurrentUser() user: AuthUser,
+    @Query() query: CustomerOrderQueryDto,
+  ) {
+    const groupStatuses = customerOrderStatuses(query.group);
+    const where: Prisma.OrderWhereInput = {
+      ...(user.role === UserRole.ADMIN ? {} : { customerId: user.id }),
+      status:
+        query.status ?? (groupStatuses ? { in: groupStatuses } : undefined),
+    };
+    if (query.search) {
+      where.OR = [
+        { orderNumber: { contains: query.search, mode: 'insensitive' } },
+        {
+          items: {
+            some: {
+              product: {
+                name: { contains: query.search, mode: 'insensitive' },
+              },
+            },
+          },
+        },
+      ];
+    }
+    const [orders, total] = await this.prisma.$transaction([
+      this.prisma.order.findMany({
+        where,
+        include: orderDetailInclude,
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.prisma.order.count({ where }),
+    ]);
+    return {
+      items: orders.map((order) => mapCustomerOrder(order)),
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
   }
 
   @Get(':id')
   @ApiOperation({
     summary:
-      'Get an order, its delivery timeline, payment-safe status, and return request',
+      'Get an order, delivery timeline, payment status, and return eligibility',
   })
   @ApiParam({ name: 'id', description: 'Order ID' })
   @ApiOkResponse({ type: OrderResponseDto })
@@ -102,10 +142,11 @@ export class OrdersController {
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   async one(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const order = await this.authorizedOrder(user, id);
-    return this.prisma.order.findUniqueOrThrow({
+    const detail = await this.prisma.order.findUniqueOrThrow({
       where: { id: order.id },
       include: orderDetailInclude,
     });
+    return mapCustomerOrder(detail);
   }
 
   @Post(':id/cancel')
@@ -263,10 +304,11 @@ export class OrdersController {
         tx,
       );
     });
-    return this.prisma.order.findUniqueOrThrow({
+    const detail = await this.prisma.order.findUniqueOrThrow({
       where: { id },
       include: orderDetailInclude,
     });
+    return mapCustomerOrder(detail);
   }
 
   @Patch('returns/:id/status')

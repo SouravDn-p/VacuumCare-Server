@@ -3,6 +3,7 @@ import { Prisma } from '../../../../generated/prisma/client';
 import { OrderStatus } from '../../../../generated/prisma/enums';
 import { PrismaService } from '../../../database/prisma.service';
 import { orderDetailInclude } from '../../orders/order-detail';
+import { mapCustomerOrder } from '../../orders/order-view';
 import {
   PERSON_SELECT,
   adminCreatedAtFilter,
@@ -87,7 +88,10 @@ export class AdminOrdersService {
       include: orderDetailInclude,
     });
     if (!order) throw new NotFoundException('Order not found');
-    return { ...order, actionEligibility: this.orderActions(order.status) };
+    return {
+      ...mapCustomerOrder(order),
+      actionEligibility: this.orderActions(order.status),
+    };
   }
 
   private orderActions(status: OrderStatus) {

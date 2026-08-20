@@ -13,5 +13,5 @@ export const orderDetailInclude = {
   items: { include: { product: true } },
   returnRequests: true,
   statusHistory: { orderBy: { createdAt: 'asc' } },
-  payments: true,
+  payments: { orderBy: { updatedAt: 'desc' } },
 } satisfies Prisma.OrderInclude;

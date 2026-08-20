@@ -91,6 +91,24 @@ export class ProductResponseDto {
 
   @ApiProperty({ example: true })
   taxable!: boolean;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Quiet-flow technology',
+    description: 'Short storefront tagline taken from the first feature.',
+  })
+  tagline!: string | null;
+
+  @ApiProperty({ example: true })
+  inStock!: boolean;
+}
+
+export class ProductCategoryCountDto {
+  @ApiProperty({ example: 'Vacuum' })
+  name!: string;
+
+  @ApiProperty({ example: 12 })
+  count!: number;
 }
 
 export class ProductPageResponseDto {
@@ -105,4 +123,9 @@ export class ProductPageResponseDto {
 
   @ApiProperty({ example: 24 })
   pageSize!: number;
+}
+
+export class ProductDetailResponseDto extends ProductResponseDto {
+  @ApiProperty({ type: [ProductResponseDto] })
+  relatedProducts!: ProductResponseDto[];
 }
