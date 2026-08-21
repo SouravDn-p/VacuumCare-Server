@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { PrismaService } from '../../../database/prisma.service';
 import { CloudinaryService } from '../../../service/cloudinary/cloudinary.service';
+import { MediaUploadService } from '../../../service/cloudinary/media-upload.service';
 import { AdminProductsService } from './products.service';
 
 describe('AdminProductsService', () => {
@@ -27,7 +28,7 @@ describe('AdminProductsService', () => {
     prisma.product.count.mockResolvedValue(0);
     const service = new AdminProductsService(
       prisma as unknown as PrismaService,
-      cloudinary as unknown as CloudinaryService,
+      new MediaUploadService(cloudinary as unknown as CloudinaryService),
     );
 
     await expect(
@@ -62,7 +63,7 @@ describe('AdminProductsService', () => {
     );
     const service = new AdminProductsService(
       prisma as unknown as PrismaService,
-      cloudinary as unknown as CloudinaryService,
+      new MediaUploadService(cloudinary as unknown as CloudinaryService),
     );
 
     await expect(
@@ -75,10 +76,19 @@ describe('AdminProductsService', () => {
           stock: 20,
           imageUrls: ['https://cdn.example.com/existing.jpg'],
         },
-        [{ originalname: 'hepa.jpg' } as Express.Multer.File],
+        [
+          {
+            originalname: 'hepa.jpg',
+            mimetype: 'image/jpeg',
+          } as Express.Multer.File,
+        ],
       ),
     ).resolves.toEqual({ id: 'product-1' });
 
+    expect(cloudinary.uploadFile).toHaveBeenCalledWith(
+      expect.objectContaining({ originalname: 'hepa.jpg' }),
+      'vacuumCare/products',
+    );
     expect(prisma.product.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         name: 'HEPA Filter',

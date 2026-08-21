@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { AdminGuard } from './admin.guard';
 import { AdminCustomersService } from './customers/customers.service';
+import { MediaUploadService } from '../../service/cloudinary/media-upload.service';
 import { AdminEquipmentService } from './equipment/equipment.service';
 import { AdminQuotationsService } from './quotations/quotations.service';
 import { AdminServiceRequestsService } from './service-requests/service-requests.service';
@@ -124,6 +125,7 @@ describe('Admin operations contracts', () => {
     prisma.equipmentMedia.create.mockResolvedValue({ id: 'media-1' });
     const service = new AdminEquipmentService(
       prisma as unknown as PrismaService,
+      {} as MediaUploadService,
     );
 
     await service.addMedia('customer-1', 'equipment-1', {

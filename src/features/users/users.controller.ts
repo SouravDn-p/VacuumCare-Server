@@ -38,11 +38,12 @@ import {
   SuccessResponseDto,
 } from '../../common/dto/api-response.dto';
 import { PrismaService } from '../../database/prisma.service';
-import { CloudinaryService } from '../../service/cloudinary/cloudinary.service';
+import { MediaUploadService } from '../../service/cloudinary/media-upload.service';
 import {
   AddressDto,
   NotificationPreferencesDto,
   ProfileDto,
+  ProfileFormDto,
   TechnicianProfileDto,
   TechnicianVerificationDto,
 } from './dto/users.dto';
@@ -54,6 +55,8 @@ import {
   UserWithTechnicianResponseDto,
 } from './dto/user-response.dto';
 
+const AVATAR_FOLDER = 'vacuumCare/avatars';
+
 @ApiTags('Users & Profiles')
 @ApiBearerAuth()
 @Controller('users')
@@ -61,7 +64,7 @@ import {
 export class UsersController {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly cloudinary: CloudinaryService,
+    private readonly media: MediaUploadService,
   ) {}
 
   @Get('me')
@@ -77,25 +80,13 @@ export class UsersController {
   }
 
   @Patch('me')
-  @ApiOperation({ summary: 'Update the authenticated user profile' })
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        firstName: { type: 'string', example: 'Alex' },
-        lastName: { type: 'string', example: 'Morgan' },
-        phone: { type: 'string', example: '+1 416 555 0100' },
-        company: { type: 'string', example: 'Morgan Home Services' },
-        avatar: {
-          type: 'string',
-          format: 'binary',
-          description:
-            'Profile picture — uploaded to Cloudinary; the returned URL is saved.',
-        },
-      },
-    },
+  @ApiOperation({
+    summary: 'Update the authenticated user profile',
+    description:
+      'Send as multipart form data. Upload a profile picture on the avatar field; JSON bodies are still accepted for the text fields alone.',
   })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: ProfileFormDto })
   @ApiOkResponse({ type: UserResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
@@ -107,10 +98,8 @@ export class UsersController {
   ) {
     let avatarUrl: string | undefined;
     if (avatar) {
-      avatarUrl = await this.cloudinary.uploadFile(
-        avatar,
-        'vacuumCare/avatars',
-      );
+      this.media.assertImages([avatar]);
+      [avatarUrl] = await this.media.uploadUrls([avatar], AVATAR_FOLDER);
     }
     return this.prisma.user.update({
       where: { id: user.id },

@@ -30,8 +30,10 @@ import { ProductResponseDto } from '../../catalog/dto/catalog-response.dto';
 import { AdminGuard } from '../admin.guard';
 import {
   AdminCreateProductDto,
+  AdminCreateProductFormDto,
   AdminProductQueryDto,
   AdminUpdateProductDto,
+  AdminUpdateProductFormDto,
 } from './dto/products.dto';
 import { AdminProductPageDto } from './dto/products-response.dto';
 import { AdminProductsService } from './products.service';
@@ -68,10 +70,10 @@ export class AdminProductsController {
   @ApiOperation({
     summary: 'Create a shop product',
     description:
-      'Accepts JSON or multipart form data. Upload files on the images field and/or pass existing imageUrls.',
+      'Send as multipart form data. Upload files on the images field and/or pass existing imageUrls. Send specifications as a JSON string.',
   })
-  @ApiConsumes('application/json', 'multipart/form-data')
-  @ApiBody({ type: AdminCreateProductDto })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: AdminCreateProductFormDto })
   @ApiCreatedResponse({ type: ProductResponseDto })
   @UseInterceptors(FilesInterceptor('images', 10))
   create(
@@ -85,11 +87,11 @@ export class AdminProductsController {
   @ApiOperation({
     summary: 'Update a shop product',
     description:
-      'Accepts JSON or multipart form data. Uploaded images are appended to imageUrls unless imageUrls is also sent.',
+      'Send as multipart form data. Uploaded images are appended to imageUrls unless imageUrls is also sent. Send specifications as a JSON string.',
   })
   @ApiParam({ name: 'id', description: 'Product ID' })
-  @ApiConsumes('application/json', 'multipart/form-data')
-  @ApiBody({ type: AdminUpdateProductDto })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: AdminUpdateProductFormDto })
   @ApiOkResponse({ type: ProductResponseDto })
   @ApiNotFoundResponse({ type: ApiErrorResponseDto })
   @UseInterceptors(FilesInterceptor('images', 10))

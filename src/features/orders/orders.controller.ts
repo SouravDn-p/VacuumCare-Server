@@ -12,12 +12,17 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
   ApiConflictResponse,
+  ApiConsumes,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiOkResponse,
@@ -37,6 +42,7 @@ import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { ApiErrorResponseDto } from '../../common/dto/api-response.dto';
 import { PrismaService } from '../../database/prisma.service';
+import { MediaUploadService } from '../../service/cloudinary/media-upload.service';
 import { CartService } from '../cart/cart.service';
 import { CartResponseDto } from '../cart/dto/cart-response.dto';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -51,6 +57,7 @@ import {
   ReturnRequestResponseDto,
   UpdateOrderStatusDto,
   UpdateReturnStatusDto,
+  UpdateReturnStatusFormDto,
 } from './dto/orders.dto';
 import { orderDetailInclude } from './order-detail';
 import { customerOrderStatuses, mapCustomerOrder } from './order-view';
@@ -75,6 +82,8 @@ const ALLOWED_RETURN_TRANSITIONS: Record<ReturnStatus, ReturnStatus[]> = {
   REFUNDED: [],
 };
 
+const RETURN_LABEL_FOLDER = 'vacuumCare/return-labels';
+
 @ApiTags('Orders & Returns')
 @ApiBearerAuth()
 @Controller('orders')
@@ -85,6 +94,7 @@ export class OrdersController {
     private readonly stripe: StripeService,
     private readonly notifications: NotificationsService,
     private readonly cart: CartService,
+    private readonly media: MediaUploadService,
   ) {}
 
   @Get()
@@ -385,16 +395,24 @@ export class OrdersController {
   }
 
   @Patch('returns/:id/status')
-  @ApiOperation({ summary: 'Review and update a return request (admin only)' })
+  @ApiOperation({
+    summary: 'Review and update a return request (admin only)',
+    description:
+      'Send as multipart form data. Upload the shipping label on the returnLabel field, or pass an already-hosted returnLabelUrl.',
+  })
   @ApiParam({ name: 'id', description: 'Return request ID' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: UpdateReturnStatusFormDto })
   @ApiOkResponse({ type: ReturnRequestResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  @UseInterceptors(FileInterceptor('returnLabel'))
   async returnStatus(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Body() dto: UpdateReturnStatusDto,
+    @UploadedFile() returnLabel?: Express.Multer.File,
   ) {
     this.admin(user);
     const request = await this.prisma.returnRequest.findUnique({
@@ -411,7 +429,18 @@ export class OrdersController {
         `Cannot transition return from ${request.status} to ${dto.status}`,
       );
     }
-    return this.prisma.returnRequest.update({ where: { id }, data: dto });
+    let returnLabelUrl = dto.returnLabelUrl;
+    if (returnLabel) {
+      this.media.assertDocuments([returnLabel]);
+      [returnLabelUrl] = await this.media.uploadUrls(
+        [returnLabel],
+        RETURN_LABEL_FOLDER,
+      );
+    }
+    return this.prisma.returnRequest.update({
+      where: { id },
+      data: { ...dto, returnLabelUrl },
+    });
   }
 
   private async authorizedOrder(user: AuthUser, idOrNumber: string) {

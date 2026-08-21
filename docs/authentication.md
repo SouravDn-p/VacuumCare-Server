@@ -15,11 +15,11 @@ This project uses JWT bearer authentication for all protected routes, opaque ref
 
 A successful login or OTP verification returns:
 
-| Field | Description |
-|---|---|
-| `accessToken` | Signed JWT — send as `Authorization: Bearer <token>` |
+| Field          | Description                                                       |
+| -------------- | ----------------------------------------------------------------- |
+| `accessToken`  | Signed JWT — send as `Authorization: Bearer <token>`              |
 | `refreshToken` | Opaque 48-byte random string stored server-side as a SHA-256 hash |
-| `user` | `{ id, email, role }` |
+| `user`         | `{ id, email, role }`                                             |
 
 JWT payload fields: `sub` (user id), `email`, `role`. Access token TTL: **30 minutes**. Refresh token TTL: **7 days**.
 ---
@@ -68,11 +68,11 @@ In **non-production** environments (`NODE_ENV !== 'production'`) no email is sen
 
 Required env vars:
 
-| Variable | Description |
-|---|---|
-| `RESEND_API_KEY` | Resend API key |
-| `VERIFICATION_EMAIL_FROM` | From-address for verification emails |
-| `RESET_EMAIL_FROM` | Fallback from-address when `VERIFICATION_EMAIL_FROM` is not set |
+| Variable                  | Description                                                     |
+| ------------------------- | --------------------------------------------------------------- |
+| `RESEND_API_KEY`          | Resend API key                                                  |
+| `VERIFICATION_EMAIL_FROM` | From-address for verification emails                            |
+| `RESET_EMAIL_FROM`        | Fallback from-address when `VERIFICATION_EMAIL_FROM` is not set |
 
 ### Verify email — activates the account
 
@@ -158,9 +158,9 @@ Outside production the OTP is returned in the response body.
 
 Required env vars:
 
-| Variable | Description |
-|---|---|
-| `RESEND_API_KEY` | Resend API key |
+| Variable           | Description                            |
+| ------------------ | -------------------------------------- |
+| `RESEND_API_KEY`   | Resend API key                         |
 | `RESET_EMAIL_FROM` | From-address for password-reset emails |
 
 ### Step 2 — submit OTP and new password
@@ -179,11 +179,11 @@ Body: { "otp": "48271", "password": "new-secure-password" }
 
 ## OTP rules summary
 
-| Flow | Length | TTL | Stored as |
-|---|---|---|---|
+| Flow                      | Length   | TTL    | Stored as    |
+| ------------------------- | -------- | ------ | ------------ |
 | Signup email verification | 5 digits | 10 min | SHA-256 hash |
-| Resend verification | 5 digits | 10 min | SHA-256 hash |
-| Password reset | 5 digits | 15 min | SHA-256 hash |
+| Resend verification       | 5 digits | 10 min | SHA-256 hash |
+| Password reset            | 5 digits | 15 min | SHA-256 hash |
 
 Raw OTPs are **never** persisted. In production they are **never** returned in API responses.
 
@@ -222,15 +222,15 @@ Returns the authenticated user's profile (no `passwordHash`), including related 
 PATCH /users/me   (multipart/form-data)
 ```
 
-| Field | Type | Notes |
-|---|---|---|
-| `firstName` | string | optional |
-| `lastName` | string | optional |
-| `phone` | string | optional |
-| `company` | string | optional |
-| `avatar` | file (binary) | optional — uploaded to Cloudinary; only the `secure_url` is saved |
+| Field       | Type          | Notes                                                             |
+| ----------- | ------------- | ----------------------------------------------------------------- |
+| `firstName` | string        | optional                                                          |
+| `lastName`  | string        | optional                                                          |
+| `phone`     | string        | optional                                                          |
+| `company`   | string        | optional                                                          |
+| `avatar`    | file (binary) | optional — uploaded to Cloudinary; only the `secure_url` is saved |
 
-When `avatar` is included the server uploads it to Cloudinary under `vacuumCare/avatars` and stores the returned URL as `avatarUrl`. Clients cannot supply a raw URL — the upload always goes through the server.
+When `avatar` is included the server rejects non-image content types, uploads the file to Cloudinary under `vacuumCare/avatars`, and stores the returned URL as `avatarUrl`. Clients cannot supply a raw URL — the upload always goes through the server. See [file-uploads.md](file-uploads.md) for every upload endpoint.
 
 ```bash
 curl -X PATCH http://localhost:5000/api/users/me \

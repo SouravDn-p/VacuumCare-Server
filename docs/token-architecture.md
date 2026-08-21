@@ -34,7 +34,7 @@ The JWT module is configured with:
 JwtModule.register({
   secret: getJwtSecret(),
   signOptions: { expiresIn: '30m' },
-})
+});
 ```
 
 So the access token lifetime is 30 minutes unless that configuration changes.

@@ -6,10 +6,16 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
@@ -26,6 +32,7 @@ import { AdminGuard } from '../admin.guard';
 import {
   AdminCreateEquipmentDto,
   AdminEquipmentMediaDto,
+  AdminEquipmentMediaFormDto,
   AdminEquipmentQueryDto,
   AdminSetInletQuantityDto,
   AdminUpdateEquipmentDto,
@@ -101,16 +108,21 @@ export class AdminEquipmentController {
 
   @Post(':id/media')
   @ApiOperation({
-    summary: 'Attach a pre-uploaded image or video URL to equipment',
+    summary: 'Attach an image or video to equipment',
     description:
-      'This endpoint stores URL metadata and does not accept binary uploads.',
+      'Send as multipart form data. Upload a file on the file field, or pass an already-hosted url.',
   })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: AdminEquipmentMediaFormDto })
   @ApiCreatedResponse({ type: AdminEquipmentMediaResponseDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  @UseInterceptors(FileInterceptor('file'))
   addMedia(
     @Param('customerId') customerId: string,
     @Param('id') id: string,
     @Body() dto: AdminEquipmentMediaDto,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.equipment.addMedia(customerId, id, dto);
+    return this.equipment.addMedia(customerId, id, dto, file);
   }
 }

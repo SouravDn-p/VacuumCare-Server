@@ -6,6 +6,10 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import {
+  ApiBinaryFile,
+  ApiRequiredBinaryFile,
+} from '../../../../common/dto/api-file.decorator';
 
 export class BusinessSettingsDto {
   @ApiPropertyOptional({ example: 'Vacuum Care' })
@@ -48,6 +52,18 @@ export class BusinessSettingsDto {
 export class UpdateBusinessSettingsDto extends PartialType(
   BusinessSettingsDto,
 ) {}
+
+/** Documents the multipart variant of the settings payload for Swagger. */
+export class UpdateBusinessSettingsFormDto extends UpdateBusinessSettingsDto {
+  @ApiBinaryFile('Logo image uploaded to Cloudinary in place of logoUrl.')
+  logo?: unknown;
+}
+
+/** Documents the logo-only upload body for Swagger. */
+export class UploadBusinessLogoFormDto {
+  @ApiRequiredBinaryFile('Logo image uploaded to Cloudinary.')
+  logo!: unknown;
+}
 
 export class UpdateBusinessLogoDto {
   @ApiProperty({ example: 'https://cdn.example.com/logo.png' })

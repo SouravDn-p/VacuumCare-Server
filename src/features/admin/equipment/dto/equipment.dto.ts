@@ -14,6 +14,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { ApiBinaryFile } from '../../../../common/dto/api-file.decorator';
 import {
   AdminPaginationQueryDto,
   AdminSearchQueryDto,
@@ -135,14 +136,19 @@ export class AdminSetInletQuantityDto {
 }
 
 export class AdminEquipmentMediaDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     format: 'uri',
     example: 'https://uploads.example.com/equipment/unit.jpg',
+    description: 'Required unless a file is uploaded on the file field.',
   })
+  @IsOptional()
   @IsUrl({ require_tld: false })
-  url!: string;
+  url?: string;
 
-  @ApiPropertyOptional({ example: 'image/jpeg' })
+  @ApiPropertyOptional({
+    example: 'image/jpeg',
+    description: 'Ignored for uploads; taken from the uploaded file instead.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(200)
@@ -153,4 +159,12 @@ export class AdminEquipmentMediaDto {
   @IsString()
   @MaxLength(500)
   caption?: string;
+}
+
+/** Documents the multipart variant of `AdminEquipmentMediaDto` for Swagger. */
+export class AdminEquipmentMediaFormDto extends AdminEquipmentMediaDto {
+  @ApiBinaryFile(
+    'Image or video file uploaded to Cloudinary in place of a url.',
+  )
+  file?: unknown;
 }

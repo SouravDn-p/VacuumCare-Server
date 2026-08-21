@@ -7,11 +7,16 @@ import {
   Param,
   Patch,
   Post,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiOkResponse,
@@ -30,7 +35,8 @@ import {
   SuccessResponseDto,
 } from '../../common/dto/api-response.dto';
 import { PrismaService } from '../../database/prisma.service';
-import { SendMessageDto } from './dto/chat.dto';
+import { MediaUploadService } from '../../service/cloudinary/media-upload.service';
+import { SendMessageDto, SendMessageFormDto } from './dto/chat.dto';
 import {
   ChatMessageResponseDto,
   ConversationResponseDto,
@@ -48,12 +54,19 @@ const conversationInclude = {
   },
 } as const;
 
+const MAX_MESSAGE_ATTACHMENTS = 5;
+
+const CHAT_MEDIA_FOLDER = 'vacuumCare/chat';
+
 @ApiTags('Chat')
 @ApiBearerAuth()
 @Controller('conversations')
 @UseGuards(JwtAuthGuard)
 export class ChatController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly media: MediaUploadService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -130,32 +143,53 @@ export class ChatController {
   @Post(':id/messages')
   @ApiOperation({
     summary: 'Send a chat message to the customer or assigned technician',
+    description:
+      'Send as multipart form data. Upload photos on the images field and clips on the videos field; attachments may also carry already-hosted URLs as a JSON string. At most 5 attachments in total.',
   })
   @ApiParam({ name: 'id', description: 'Conversation ID' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: SendMessageFormDto })
   @ApiCreatedResponse({ type: ChatMessageResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'images', maxCount: MAX_MESSAGE_ATTACHMENTS },
+      { name: 'videos', maxCount: MAX_MESSAGE_ATTACHMENTS },
+    ]),
+  )
   async send(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Body() dto: SendMessageDto,
+    @UploadedFiles()
+    uploads: {
+      images?: Express.Multer.File[];
+      videos?: Express.Multer.File[];
+    } = {},
   ) {
-    if ((dto.attachments?.length ?? 0) > 5)
+    const hosted = dto.attachments ?? [];
+    const files = [...(uploads.images ?? []), ...(uploads.videos ?? [])];
+    if (hosted.length + files.length > MAX_MESSAGE_ATTACHMENTS)
       throw new ForbiddenException(
-        'A message can contain at most five attachments',
+        `A message can contain at most ${MAX_MESSAGE_ATTACHMENTS} attachments`,
       );
+    this.media.assertKind(uploads.images ?? [], 'image');
+    this.media.assertKind(uploads.videos ?? [], 'video');
     const conversation = await this.authorizedConversation(user, id);
+    // Uploads run after authorization so a rejected message never leaves
+    // orphaned files in Cloudinary.
+    const uploaded = await this.media.upload(files, CHAT_MEDIA_FOLDER);
+    const attachments = [...hosted, ...uploaded];
     const message = await this.prisma.$transaction(async (tx) => {
       const created = await tx.chatMessage.create({
         data: {
           conversationId: id,
           senderId: user.id,
           body: dto.body,
-          attachments: dto.attachments
-            ? (JSON.parse(
-                JSON.stringify(dto.attachments),
-              ) as Prisma.InputJsonValue)
+          attachments: attachments.length
+            ? (JSON.parse(JSON.stringify(attachments)) as Prisma.InputJsonValue)
             : undefined,
         },
         include: {

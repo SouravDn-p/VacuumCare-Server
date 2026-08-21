@@ -11,6 +11,7 @@ import {
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiBinaryFile } from '../../../common/dto/api-file.decorator';
 import {
   OrderStatus,
   PaymentStatus,
@@ -153,10 +154,17 @@ export class UpdateReturnStatusDto {
   @ApiPropertyOptional({
     format: 'uri',
     example: 'https://carrier.example.com/labels/return-123.pdf',
+    description: 'Alternative to uploading a file on the returnLabel field.',
   })
   @IsOptional()
   @IsUrl({ require_tld: false })
   returnLabelUrl?: string;
+}
+
+/** Documents the multipart variant of `UpdateReturnStatusDto` for Swagger. */
+export class UpdateReturnStatusFormDto extends UpdateReturnStatusDto {
+  @ApiBinaryFile('Return shipping label as a PDF or image file.')
+  returnLabel?: unknown;
 }
 
 export class ProductOrderItemResponseDto {

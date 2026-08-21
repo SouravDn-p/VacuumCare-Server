@@ -2,7 +2,7 @@
 import { CatalogController } from './catalog.controller';
 import { ProductSort } from './dto/catalog.dto';
 import { PrismaService } from '../../database/prisma.service';
-import { CloudinaryService } from '../../service/cloudinary/cloudinary.service';
+import { MediaUploadService } from '../../service/cloudinary/media-upload.service';
 
 describe('CatalogController customer storefront', () => {
   const prisma = {
@@ -31,7 +31,7 @@ describe('CatalogController customer storefront', () => {
     prisma.product.count.mockResolvedValue(1);
     const controller = new CatalogController(
       prisma as unknown as PrismaService,
-      {} as CloudinaryService,
+      {} as MediaUploadService,
     );
 
     const result = await controller.products({

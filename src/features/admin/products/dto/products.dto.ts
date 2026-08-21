@@ -1,9 +1,5 @@
-import {
-  ApiPropertyOptional,
-  IntersectionType,
-  OmitType,
-} from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
+import { ApiPropertyOptional, IntersectionType } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsInt,
@@ -13,18 +9,17 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { ProductDto, UpdateProductDto } from '../../../catalog/dto/catalog.dto';
+import { ToBoolean } from '../../../../common/dto/multipart.transform';
+import {
+  CreateProductDto,
+  CreateProductFormDto,
+  UpdateProductDto,
+  UpdateProductFormDto,
+} from '../../../catalog/dto/catalog.dto';
 import {
   AdminPaginationQueryDto,
   AdminSearchQueryDto,
 } from '../../common/dto/admin-query.dto';
-
-function optionalBoolean(value: unknown): unknown {
-  if (value === undefined || value === null || value === '') return undefined;
-  if (value === true || value === 'true' || value === '1') return true;
-  if (value === false || value === 'false' || value === '0') return false;
-  return value;
-}
 
 export class AdminProductQueryDto extends IntersectionType(
   AdminPaginationQueryDto,
@@ -41,13 +36,13 @@ export class AdminProductQueryDto extends IntersectionType(
     description: 'Omit to include active and inactive products.',
   })
   @IsOptional()
-  @Transform(({ value }) => optionalBoolean(value))
+  @ToBoolean()
   @IsBoolean()
   isActive?: boolean;
 
   @ApiPropertyOptional({ type: Boolean, default: false })
   @IsOptional()
-  @Transform(({ value }) => optionalBoolean(value))
+  @ToBoolean()
   @IsBoolean()
   lowStock?: boolean;
 
@@ -60,38 +55,12 @@ export class AdminProductQueryDto extends IntersectionType(
   lowStockThreshold: number = 5;
 }
 
-export class AdminCreateProductDto extends OmitType(ProductDto, [
-  'imageUrls',
-] as const) {
-  @Type(() => Number)
-  declare price: number;
-
-  @Type(() => Number)
-  declare stock: number;
-
-  @ApiPropertyOptional({
-    type: [String],
-    format: 'uri',
-    example: ['https://cdn.example.com/products/hepa-filter.jpg'],
-  })
-  @IsOptional()
-  @Transform(({ value }: { value: unknown }) => {
-    if (value === undefined || value === null || value === '') return undefined;
-    if (Array.isArray(value)) return value.map(String);
-    if (typeof value === 'string') {
-      try {
-        const parsed: unknown = JSON.parse(value);
-        if (Array.isArray(parsed)) return parsed.map(String);
-      } catch {
-        return value
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean);
-      }
-    }
-    return value;
-  })
-  imageUrls?: string[];
-}
+export class AdminCreateProductDto extends CreateProductDto {}
 
 export class AdminUpdateProductDto extends UpdateProductDto {}
+
+/** Documents the multipart variant of the create payload for Swagger. */
+export class AdminCreateProductFormDto extends CreateProductFormDto {}
+
+/** Documents the multipart variant of the update payload for Swagger. */
+export class AdminUpdateProductFormDto extends UpdateProductFormDto {}

@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../../../generated/prisma/client';
 import { PrismaService } from '../../../database/prisma.service';
-import { CloudinaryService } from '../../../service/cloudinary/cloudinary.service';
+import { MediaUploadService } from '../../../service/cloudinary/media-upload.service';
 import { adminPage, adminSkip } from '../common/admin-pagination';
 import {
   AdminCreateProductDto,
@@ -9,11 +9,13 @@ import {
   AdminUpdateProductDto,
 } from './dto/products.dto';
 
+const PRODUCT_MEDIA_FOLDER = 'vacuumCare/products';
+
 @Injectable()
 export class AdminProductsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly cloudinary: CloudinaryService,
+    private readonly media: MediaUploadService,
   ) {}
 
   async list(query: AdminProductQueryDto) {
@@ -116,11 +118,7 @@ export class AdminProductsService {
   }
 
   private async uploadProductMedia(files: Express.Multer.File[]) {
-    if (!files.length) return [];
-    return Promise.all(
-      files.map((file) =>
-        this.cloudinary.uploadFile(file, 'vacumeCare/products'),
-      ),
-    );
+    this.media.assertImages(files);
+    return this.media.uploadUrls(files, PRODUCT_MEDIA_FOLDER);
   }
 }

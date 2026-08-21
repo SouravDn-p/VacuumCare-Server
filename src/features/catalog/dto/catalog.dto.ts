@@ -1,5 +1,10 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
+import {
+  ApiProperty,
+  ApiPropertyOptional,
+  OmitType,
+  PartialType,
+} from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -12,6 +17,12 @@ import {
   Max,
   Min,
 } from 'class-validator';
+import { ApiBinaryFiles } from '../../../common/dto/api-file.decorator';
+import {
+  JsonObject,
+  StringArray,
+  ToBoolean,
+} from '../../../common/dto/multipart.transform';
 
 export enum ProductSort {
   POPULARITY = 'popularity',
@@ -19,23 +30,6 @@ export enum ProductSort {
   PRICE_DESC = 'price_desc',
   NEWEST = 'newest',
   NAME = 'name',
-}
-
-function optionalBoolean(value: unknown): unknown {
-  if (value === undefined || value === null || value === '') return undefined;
-  if (value === true || value === 'true' || value === '1') return true;
-  if (value === false || value === 'false' || value === '0') return false;
-  return value;
-}
-
-function stringList(value: unknown): unknown {
-  if (value === undefined || value === null || value === '') return undefined;
-  if (Array.isArray(value)) return value.map(String);
-  if (typeof value !== 'string') return undefined;
-  return value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
 }
 
 export class CategoryDto {
@@ -81,11 +75,13 @@ export class ProductDto {
   category!: string;
 
   @ApiProperty({ minimum: 0, example: 39.99 })
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   price!: number;
 
   @ApiProperty({ minimum: 0, example: 20 })
+  @Type(() => Number)
   @IsInt()
   @Min(0)
   stock!: number;
@@ -95,6 +91,7 @@ export class ProductDto {
     format: 'uri',
     example: ['https://cdn.example.com/products/hepa-filter.jpg'],
   })
+  @StringArray()
   @IsArray()
   @IsString({ each: true })
   imageUrls!: string[];
@@ -109,6 +106,7 @@ export class ProductDto {
     example: ['HEPA-grade filtration', 'Tool-free installation'],
   })
   @IsOptional()
+  @StringArray()
   @IsArray()
   @IsString({ each: true })
   features?: string[];
@@ -117,8 +115,10 @@ export class ProductDto {
     type: 'object',
     additionalProperties: true,
     example: { compatibility: 'H700 series', dimensions: '15 × 8 cm' },
+    description: 'On form requests send this as a JSON string.',
   })
   @IsOptional()
+  @JsonObject()
   @IsObject()
   specifications?: Record<string, string | number | boolean>;
 
@@ -134,16 +134,48 @@ export class ProductDto {
 
   @ApiPropertyOptional({ default: true, example: true })
   @IsOptional()
+  @ToBoolean()
   @IsBoolean()
   isActive?: boolean;
 
   @ApiPropertyOptional({ default: true, example: true })
   @IsOptional()
+  @ToBoolean()
   @IsBoolean()
   taxable?: boolean;
 }
 
 export class UpdateProductDto extends PartialType(ProductDto) {}
+
+/**
+ * Create payload for the upload endpoints: images normally arrive as files, so
+ * `imageUrls` carries already-hosted URLs only and is optional.
+ */
+export class CreateProductDto extends OmitType(ProductDto, [
+  'imageUrls',
+] as const) {
+  @ApiPropertyOptional({
+    type: [String],
+    format: 'uri',
+    example: ['https://cdn.example.com/products/hepa-filter.jpg'],
+    description: 'Already-hosted image URLs, kept alongside uploaded files.',
+  })
+  @IsOptional()
+  @StringArray()
+  imageUrls?: string[];
+}
+
+/** Documents the multipart create payload for Swagger. */
+export class CreateProductFormDto extends CreateProductDto {
+  @ApiBinaryFiles('Product images uploaded to Cloudinary.')
+  images?: unknown[];
+}
+
+/** Documents the multipart update payload for Swagger. */
+export class UpdateProductFormDto extends UpdateProductDto {
+  @ApiBinaryFiles('Product images uploaded to Cloudinary.')
+  images?: unknown[];
+}
 
 export class ProductQueryDto {
   @ApiPropertyOptional({
@@ -165,7 +197,7 @@ export class ProductQueryDto {
     description: 'One or more store categories. Comma-separated values work.',
   })
   @IsOptional()
-  @Transform(({ value }) => stringList(value))
+  @StringArray()
   @IsArray()
   @IsString({ each: true })
   categories?: string[];
@@ -189,7 +221,7 @@ export class ProductQueryDto {
     description: 'When true, only products with stock greater than zero.',
   })
   @IsOptional()
-  @Transform(({ value }) => optionalBoolean(value))
+  @ToBoolean()
   @IsBoolean()
   inStockOnly?: boolean;
 

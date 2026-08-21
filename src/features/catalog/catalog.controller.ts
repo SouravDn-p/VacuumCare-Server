@@ -33,8 +33,16 @@ import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { ApiErrorResponseDto } from '../../common/dto/api-response.dto';
 import { PrismaService } from '../../database/prisma.service';
-import { CloudinaryService } from '../../service/cloudinary/cloudinary.service';
-import { CategoryDto, ProductQueryDto, ProductSort } from './dto/catalog.dto';
+import { MediaUploadService } from '../../service/cloudinary/media-upload.service';
+import {
+  CategoryDto,
+  CreateProductDto,
+  CreateProductFormDto,
+  ProductQueryDto,
+  ProductSort,
+  UpdateProductDto,
+  UpdateProductFormDto,
+} from './dto/catalog.dto';
 import {
   ProductCategoryCountDto,
   ProductDetailResponseDto,
@@ -50,7 +58,7 @@ import {
 export class CatalogController {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly cloudinary: CloudinaryService,
+    private readonly media: MediaUploadService,
   ) {}
 
   @Get('services')
@@ -216,33 +224,13 @@ export class CatalogController {
   }
 
   @Post('products')
-  @ApiOperation({ summary: 'Create a shop product (admin only)' })
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      required: ['name', 'description', 'category', 'price', 'stock'],
-      properties: {
-        sku: { type: 'string' },
-        name: { type: 'string' },
-        description: { type: 'string' },
-        category: { type: 'string' },
-        price: { type: 'number' },
-        stock: { type: 'integer' },
-        slug: { type: 'string' },
-        features: { type: 'array', items: { type: 'string' } },
-        specifications: { type: 'string', description: 'JSON string' },
-        warranty: { type: 'string' },
-        shippingInfo: { type: 'string' },
-        isActive: { type: 'boolean' },
-        taxable: { type: 'boolean', default: true },
-        images: {
-          type: 'array',
-          items: { type: 'string', format: 'binary' },
-        },
-      },
-    },
+  @ApiOperation({
+    summary: 'Create a shop product (admin only)',
+    description:
+      'Send as multipart form data. Upload files on the images field and/or pass existing imageUrls. Send specifications as a JSON string.',
   })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: CreateProductFormDto })
   @ApiCreatedResponse({ type: ProductResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({
@@ -253,58 +241,30 @@ export class CatalogController {
   @UseInterceptors(FilesInterceptor('images', 10))
   async createProduct(
     @CurrentUser() user: AuthUser,
-    @Body() dto: Record<string, string | string[] | undefined>,
+    @Body() dto: CreateProductDto,
     @UploadedFiles() files: Express.Multer.File[] = [],
   ) {
     if (user.role !== UserRole.ADMIN) throw new ForbiddenException();
+    const uploaded = await this.uploadProductMedia(files);
     return this.prisma.product.create({
       data: {
-        sku: this.optionalString(dto.sku),
-        name: this.requiredString(dto.name, 'name'),
-        description: this.requiredString(dto.description, 'description'),
-        category: this.requiredString(dto.category, 'category'),
-        price: this.requiredNumber(dto.price, 'price'),
-        stock: this.requiredInteger(dto.stock, 'stock'),
-        slug: this.optionalString(dto.slug),
-        features: this.optionalStringArray(dto.features),
-        specifications: this.optionalJson(dto.specifications),
-        warranty: this.optionalString(dto.warranty),
-        shippingInfo: this.optionalString(dto.shippingInfo),
-        isActive: this.optionalBoolean(dto.isActive) ?? true,
-        taxable: this.optionalBoolean(dto.taxable) ?? true,
-        imageUrls: await this.uploadProductMedia(files),
+        ...dto,
+        isActive: dto.isActive ?? true,
+        taxable: dto.taxable ?? true,
+        imageUrls: [...(dto.imageUrls ?? []), ...(uploaded ?? [])],
       },
     });
   }
 
   @Patch('products/:id')
-  @ApiOperation({ summary: 'Update a shop product (admin only)' })
+  @ApiOperation({
+    summary: 'Update a shop product (admin only)',
+    description:
+      'Send as multipart form data. Uploaded images are appended to imageUrls unless imageUrls is also sent. Send specifications as a JSON string.',
+  })
   @ApiParam({ name: 'id', description: 'Product ID' })
   @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        sku: { type: 'string' },
-        name: { type: 'string' },
-        description: { type: 'string' },
-        category: { type: 'string' },
-        price: { type: 'number' },
-        stock: { type: 'integer' },
-        slug: { type: 'string' },
-        features: { type: 'array', items: { type: 'string' } },
-        specifications: { type: 'string', description: 'JSON string' },
-        warranty: { type: 'string' },
-        shippingInfo: { type: 'string' },
-        isActive: { type: 'boolean' },
-        taxable: { type: 'boolean' },
-        images: {
-          type: 'array',
-          items: { type: 'string', format: 'binary' },
-        },
-      },
-    },
-  })
+  @ApiBody({ type: UpdateProductFormDto })
   @ApiOkResponse({ type: ProductResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({
@@ -316,50 +276,18 @@ export class CatalogController {
   async updateProduct(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() dto: Record<string, string | string[] | undefined>,
+    @Body() dto: UpdateProductDto,
     @UploadedFiles() files: Express.Multer.File[] = [],
   ) {
     if (user.role !== UserRole.ADMIN) throw new ForbiddenException();
-    const imageUrls = files.length
-      ? await this.uploadProductMedia(files)
-      : undefined;
+    const uploaded = await this.uploadProductMedia(files);
     return this.prisma.product.update({
       where: { id },
       data: {
-        ...(dto.sku !== undefined ? { sku: this.optionalString(dto.sku) } : {}),
-        ...(dto.name ? { name: this.requiredString(dto.name, 'name') } : {}),
-        ...(dto.description
-          ? { description: this.requiredString(dto.description, 'description') }
+        ...dto,
+        ...(uploaded
+          ? { imageUrls: [...(dto.imageUrls ?? []), ...uploaded] }
           : {}),
-        ...(dto.category
-          ? { category: this.requiredString(dto.category, 'category') }
-          : {}),
-        ...(dto.price !== undefined
-          ? { price: this.requiredNumber(dto.price, 'price') }
-          : {}),
-        ...(dto.stock !== undefined
-          ? { stock: this.requiredInteger(dto.stock, 'stock') }
-          : {}),
-        ...(dto.slug ? { slug: this.optionalString(dto.slug) } : {}),
-        ...(dto.features
-          ? { features: this.optionalStringArray(dto.features) }
-          : {}),
-        ...(dto.specifications
-          ? { specifications: this.optionalJson(dto.specifications) }
-          : {}),
-        ...(dto.warranty
-          ? { warranty: this.optionalString(dto.warranty) }
-          : {}),
-        ...(dto.shippingInfo
-          ? { shippingInfo: this.optionalString(dto.shippingInfo) }
-          : {}),
-        ...(dto.isActive !== undefined
-          ? { isActive: this.optionalBoolean(dto.isActive) }
-          : {}),
-        ...(dto.taxable !== undefined
-          ? { taxable: this.optionalBoolean(dto.taxable) }
-          : {}),
-        ...(imageUrls ? { imageUrls } : {}),
       },
     });
   }
@@ -396,71 +324,7 @@ export class CatalogController {
 
   private async uploadProductMedia(files: Express.Multer.File[]) {
     if (!files.length) return undefined;
-    const urls = await Promise.all(
-      files.map((file) =>
-        this.cloudinary.uploadFile(file, 'vacumeCare/products'),
-      ),
-    );
-    return urls;
-  }
-
-  private requiredString(value: string | string[] | undefined, field: string) {
-    const first = this.firstValue(value);
-    if (!first) throw new ForbiddenException(`${field} is required`);
-    return first;
-  }
-
-  private requiredNumber(value: string | string[] | undefined, field: string) {
-    const parsed = Number(this.requiredString(value, field));
-    if (Number.isNaN(parsed))
-      throw new ForbiddenException(`${field} must be a number`);
-    return parsed;
-  }
-
-  private requiredInteger(value: string | string[] | undefined, field: string) {
-    const parsed = Number(this.requiredString(value, field));
-    if (!Number.isInteger(parsed))
-      throw new ForbiddenException(`${field} must be an integer`);
-    return parsed;
-  }
-
-  private optionalString(value: string | string[] | undefined) {
-    return this.firstValue(value) ?? undefined;
-  }
-
-  private optionalBoolean(value: string | string[] | undefined) {
-    const raw = this.firstValue(value);
-    if (raw === undefined) return undefined;
-    return raw === 'true' || raw === '1';
-  }
-
-  private optionalStringArray(value: string | string[] | undefined) {
-    if (Array.isArray(value)) return value;
-    const raw = this.firstValue(value);
-    if (!raw) return undefined;
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.map(String);
-    } catch {
-      // Fall through to comma-separated form data.
-    }
-    return raw
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean);
-  }
-
-  private optionalJson(value: string | string[] | undefined) {
-    const raw = this.firstValue(value);
-    if (!raw) return undefined;
-    try {
-      return JSON.parse(raw) as Record<string, string | number | boolean>;
-    } catch {
-      throw new ForbiddenException('specifications must be valid JSON');
-    }
-  }
-
-  private firstValue(value: string | string[] | undefined) {
-    return Array.isArray(value) ? value[0] : value;
+    this.media.assertImages(files);
+    return this.media.uploadUrls(files, 'vacuumCare/products');
   }
 }

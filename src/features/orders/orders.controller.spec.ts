@@ -6,6 +6,7 @@ import {
 } from '../../../generated/prisma/enums';
 import { PrismaService } from '../../database/prisma.service';
 import { CartService } from '../cart/cart.service';
+import { MediaUploadService } from '../../service/cloudinary/media-upload.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { StripeService } from '../payments/stripe.service';
 import { OrdersController } from './orders.controller';
@@ -64,6 +65,7 @@ describe('OrdersController customer My Orders', () => {
       {} as StripeService,
       {} as NotificationsService,
       {} as CartService,
+      {} as MediaUploadService,
     );
 
     const result = await controller.list(
@@ -130,6 +132,7 @@ describe('OrdersController customer My Orders', () => {
       {} as StripeService,
       {} as NotificationsService,
       {} as CartService,
+      {} as MediaUploadService,
     );
 
     await expect(

@@ -15,6 +15,11 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MediaKind, RequestStatus } from '../../../../generated/prisma/enums';
+import {
+  ApiBinaryFile,
+  ApiBinaryFiles,
+} from '../../../common/dto/api-file.decorator';
+import { JsonArray } from '../../../common/dto/multipart.transform';
 
 export class AttachmentDto {
   @ApiProperty({
@@ -69,12 +74,29 @@ export class CreateRequestDto {
   @IsString()
   preferredTime?: string;
 
-  @ApiPropertyOptional({ type: [AttachmentDto], maxItems: 10 })
+  @ApiPropertyOptional({
+    type: [AttachmentDto],
+    maxItems: 10,
+    description:
+      'Already-hosted media URLs. On multipart requests send this as a JSON string.',
+  })
   @IsOptional()
+  @JsonArray(AttachmentDto)
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => AttachmentDto)
   attachments?: AttachmentDto[];
+}
+
+/**
+ * Documents the multipart variant of `CreateRequestDto` for Swagger. The file
+ * fields are consumed by the upload interceptor, never by the validation pipe.
+ */
+export class CreateRequestFormDto extends CreateRequestDto {
+  @ApiBinaryFiles('Issue photos. Each file must have an image/* content type.')
+  images?: unknown[];
+
+  @ApiBinaryFiles('Issue clips. Each file must have a video/* content type.')
+  videos?: unknown[];
 }
 
 export class UpdateRequestStatusDto {
@@ -183,7 +205,24 @@ export class RejectQuoteDto {
   reason?: string;
 }
 
-export class MediaDto extends AttachmentDto {
+export class MediaDto {
+  @ApiPropertyOptional({
+    format: 'uri',
+    example: 'https://uploads.example.com/issues/photo-1.jpg',
+    description: 'Required unless a file is uploaded on the file field.',
+  })
+  @IsOptional()
+  @IsUrl({ require_tld: false })
+  url?: string;
+
+  @ApiPropertyOptional({
+    example: 'image/jpeg',
+    description: 'Ignored for uploads; taken from the uploaded file instead.',
+  })
+  @IsOptional()
+  @IsString()
+  mimeType?: string;
+
   @ApiProperty({
     enum: MediaKind,
     enumName: 'MediaKind',
@@ -191,6 +230,14 @@ export class MediaDto extends AttachmentDto {
   })
   @IsEnum(MediaKind)
   kind!: MediaKind;
+}
+
+/** Documents the multipart variant of `MediaDto` for Swagger. */
+export class MediaFormDto extends MediaDto {
+  @ApiBinaryFile(
+    'Image or video file uploaded to Cloudinary in place of a url.',
+  )
+  file?: unknown;
 }
 
 export class PartUsedDto {

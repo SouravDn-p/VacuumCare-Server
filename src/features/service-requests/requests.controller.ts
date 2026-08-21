@@ -10,13 +10,22 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import {
+  FileFieldsInterceptor,
+  FileInterceptor,
+} from '@nestjs/platform-express';
 import { randomUUID } from 'crypto';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
   ApiConflictResponse,
+  ApiConsumes,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiOkResponse,
@@ -39,6 +48,7 @@ import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { ApiErrorResponseDto } from '../../common/dto/api-response.dto';
 import { PrismaService } from '../../database/prisma.service';
+import { MediaUploadService } from '../../service/cloudinary/media-upload.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { StripeService } from '../payments/stripe.service';
 import { CreateQuoteCounterofferDto } from './dto/quote-counteroffer.dto';
@@ -48,8 +58,10 @@ import {
   CancelRequestDto,
   CreateQuoteDto,
   CreateRequestDto,
+  CreateRequestFormDto,
   EquipmentDto,
   MediaDto,
+  MediaFormDto,
   RejectQuoteDto,
   ReportDto,
   UpdateRequestStatusDto,
@@ -85,6 +97,10 @@ const detailInclude = {
   statusHistory: { orderBy: { createdAt: 'asc' } },
 } as const;
 
+const MAX_REQUEST_MEDIA = 10;
+
+const REQUEST_MEDIA_FOLDER = 'vacuumCare/service-requests';
+
 const CUSTOMER_CANCELLABLE = new Set<RequestStatus>([
   RequestStatus.NEW,
   RequestStatus.UNDER_REVIEW,
@@ -103,6 +119,7 @@ export class RequestsController {
     private readonly stripe: StripeService,
     private readonly counteroffers: QuoteCounterofferService,
     private readonly notifications: NotificationsService,
+    private readonly mediaUploads: MediaUploadService,
   ) {}
 
   @Get('catalog')
@@ -122,18 +139,42 @@ export class RequestsController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Submit a service request as a customer' })
+  @ApiOperation({
+    summary: 'Submit a service request as a customer',
+    description:
+      'Send as multipart form data. Upload issue photos on the images field and clips on the videos field; attachments may also carry already-hosted URLs as a JSON string. At most 10 media items in total.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: CreateRequestFormDto })
   @ApiCreatedResponse({ type: ServiceRequestResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
-  async create(@CurrentUser() user: AuthUser, @Body() dto: CreateRequestDto) {
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'images', maxCount: MAX_REQUEST_MEDIA },
+      { name: 'videos', maxCount: MAX_REQUEST_MEDIA },
+    ]),
+  )
+  async create(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: CreateRequestDto,
+    @UploadedFiles()
+    uploads: {
+      images?: Express.Multer.File[];
+      videos?: Express.Multer.File[];
+    } = {},
+  ) {
     this.customer(user);
-    if ((dto.attachments?.length ?? 0) > 10)
+    const attachments = dto.attachments ?? [];
+    const files = [...(uploads.images ?? []), ...(uploads.videos ?? [])];
+    if (attachments.length + files.length > MAX_REQUEST_MEDIA)
       throw new ConflictException(
-        'A service request can contain at most 10 attachments',
+        `A service request can contain at most ${MAX_REQUEST_MEDIA} attachments`,
       );
-    this.validateIssueAttachments(dto.attachments ?? []);
+    this.validateIssueAttachments(attachments);
+    this.mediaUploads.assertKind(uploads.images ?? [], 'image');
+    this.mediaUploads.assertKind(uploads.videos ?? [], 'video');
     const [address, category] = await Promise.all([
       this.prisma.address.findFirst({
         where: { id: dto.addressId, userId: user.id },
@@ -152,6 +193,13 @@ export class RequestsController {
           'The issue must belong to the selected category',
         );
     }
+    // Uploads run only after the request payload is known to be valid so a
+    // rejected submission never leaves orphaned files in Cloudinary.
+    const uploaded = await this.mediaUploads.upload(
+      files,
+      REQUEST_MEDIA_FOLDER,
+    );
+    const media = [...attachments, ...uploaded];
     const request = await this.prisma.serviceRequest.create({
       data: {
         requestNumber: this.requestNumber(),
@@ -164,9 +212,9 @@ export class RequestsController {
           ? new Date(dto.preferredDate)
           : undefined,
         preferredTime: dto.preferredTime,
-        media: dto.attachments?.length
+        media: media.length
           ? {
-              create: dto.attachments.map((attachment) => ({
+              create: media.map((attachment) => ({
                 ...attachment,
                 kind: MediaKind.ISSUE,
               })),
@@ -545,22 +593,43 @@ export class RequestsController {
   }
 
   @Post(':id/media')
-  @ApiOperation({ summary: 'Add a role-appropriate media URL to a request' })
+  @ApiOperation({
+    summary: 'Add role-appropriate media to a request',
+    description:
+      'Send as multipart form data. Upload an image or video on the file field, or pass an already-hosted url.',
+  })
   @ApiParam({ name: 'id', description: 'Service request ID' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: MediaFormDto })
   @ApiCreatedResponse({ type: ServiceMediaResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
   @ApiForbiddenResponse({ type: ApiErrorResponseDto })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  @UseInterceptors(FileInterceptor('file'))
   async media(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Body() dto: MediaDto,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
     const request = await this.getAuthorized(user, id);
     this.validateMediaRole(user, request.technicianId, dto.kind);
-    this.validateMime(dto.mimeType);
+    if (!file && !dto.url)
+      throw new BadRequestException(
+        'Either a file upload or a url is required',
+      );
+    if (file) this.mediaUploads.assertMedia([file]);
+    else this.validateMime(dto.mimeType);
+    const uploaded = file
+      ? (await this.mediaUploads.upload([file], REQUEST_MEDIA_FOLDER))[0]
+      : undefined;
     const media = await this.prisma.serviceMedia.create({
-      data: { requestId: id, ...dto },
+      data: {
+        requestId: id,
+        kind: dto.kind,
+        url: uploaded?.url ?? dto.url!,
+        mimeType: uploaded?.mimeType ?? dto.mimeType,
+      },
     });
     await this.notifications.fanOutToActiveAdmins({
       title: 'Service request media added',

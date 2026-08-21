@@ -6,6 +6,7 @@ import {
 import { Prisma } from '../../../../generated/prisma/client';
 import { UserRole } from '../../../../generated/prisma/enums';
 import { PrismaService } from '../../../database/prisma.service';
+import { MediaUploadService } from '../../../service/cloudinary/media-upload.service';
 import {
   AdminCreateEquipmentDto,
   AdminEquipmentMediaDto,
@@ -19,9 +20,14 @@ const equipmentInclude = {
   media: { orderBy: { createdAt: 'desc' } },
 } satisfies Prisma.EquipmentInclude;
 
+const EQUIPMENT_MEDIA_FOLDER = 'vacuumCare/equipment';
+
 @Injectable()
 export class AdminEquipmentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly media: MediaUploadService,
+  ) {}
 
   async list(customerId: string, query: AdminEquipmentQueryDto) {
     await this.requireCustomer(customerId);
@@ -109,15 +115,32 @@ export class AdminEquipmentService {
     customerId: string,
     equipmentId: string,
     dto: AdminEquipmentMediaDto,
+    file?: Express.Multer.File,
   ) {
     await this.requireEquipment(customerId, equipmentId);
-    if (dto.mimeType && !/^(image|video)\/[a-z0-9.+-]+$/i.test(dto.mimeType)) {
+    if (!file && !dto.url)
+      throw new BadRequestException(
+        'Either a file upload or a url is required',
+      );
+    if (file) this.media.assertMedia([file]);
+    else if (
+      dto.mimeType &&
+      !/^(image|video)\/[a-z0-9.+-]+$/i.test(dto.mimeType)
+    ) {
       throw new BadRequestException(
         'Only image and video attachments are supported',
       );
     }
+    const uploaded = file
+      ? (await this.media.upload([file], EQUIPMENT_MEDIA_FOLDER))[0]
+      : undefined;
     return this.prisma.equipmentMedia.create({
-      data: { equipmentId, ...dto },
+      data: {
+        equipmentId,
+        caption: dto.caption,
+        url: uploaded?.url ?? dto.url!,
+        mimeType: uploaded?.mimeType ?? dto.mimeType,
+      },
     });
   }
 
