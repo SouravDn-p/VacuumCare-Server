@@ -246,7 +246,7 @@ curl -X PATCH http://localhost:5000/api/users/me \
 
 ## Where auth is used
 
-`users` · `cart` · `catalog` · `orders` · `tracking` · `chat` · `calls` · `payments` · `notifications` · `admin` · `service-requests`
+`users` · `cart` · `catalog` · `orders` · `tracking` · `chat` · `calls` · `payments` · `notifications` · `admin` · `service-requests` · `technician`
 
 All protected routes combine `@UseGuards(JwtAuthGuard)` with `@CurrentUser()` and role-aware checks.
 

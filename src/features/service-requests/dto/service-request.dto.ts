@@ -19,21 +19,6 @@ import {
   ApiBinaryFile,
   ApiBinaryFiles,
 } from '../../../common/dto/api-file.decorator';
-import { JsonArray } from '../../../common/dto/multipart.transform';
-
-export class AttachmentDto {
-  @ApiProperty({
-    format: 'uri',
-    example: 'https://uploads.example.com/issues/photo-1.jpg',
-  })
-  @IsUrl({ require_tld: false })
-  url!: string;
-
-  @ApiPropertyOptional({ example: 'image/jpeg' })
-  @IsOptional()
-  @IsString()
-  mimeType?: string;
-}
 
 export class CreateRequestDto {
   @ApiProperty({ example: 'service-category-id' })
@@ -73,18 +58,6 @@ export class CreateRequestDto {
   @IsOptional()
   @IsString()
   preferredTime?: string;
-
-  @ApiPropertyOptional({
-    type: [AttachmentDto],
-    maxItems: 10,
-    description:
-      'Already-hosted media URLs. On multipart requests send this as a JSON string.',
-  })
-  @IsOptional()
-  @JsonArray(AttachmentDto)
-  @IsArray()
-  @ValidateNested({ each: true })
-  attachments?: AttachmentDto[];
 }
 
 /**

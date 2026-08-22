@@ -16,8 +16,8 @@ documented in Swagger (`/api/docs`) so the file pickers appear there.
   from their form values, so `price=39.99` and `taxable=false` work as written. String
   lists also accept repeated fields or one comma-separated value.
 - **Nested fields are JSON strings.** A form request cannot express nested objects, so
-  `attachments` and `specifications` are sent as JSON text:
-  `-F 'attachments=[{"url":"https://…/photo.jpg"}]'`.
+  `specifications` is sent as JSON text:
+  `-F 'specifications={"compatibility":"H700 series"}'`.
 - **Validation happens before upload.** Content types and per-request limits are checked
   first, so a rejected request never leaves orphaned files in Cloudinary.
 - **The server owns the stored URL.** Files are uploaded to Cloudinary and only the
@@ -29,7 +29,9 @@ documented in Swagger (`/api/docs`) so the file pickers appear there.
 | ----------------------------------------------------------- | ---------------------- | -------------- | ------------------------------ |
 | `PATCH /api/users/me`                                       | `avatar`               | image          | `User.avatarUrl`               |
 | `POST /api/service-requests`                                | `images[]`, `videos[]` | image / video  | `ServiceMedia` (`ISSUE`)       |
-| `POST /api/service-requests/:id/media`                      | `file`                 | image or video | `ServiceMedia`                 |
+| `POST /api/service-requests/:id/media`                      | `file`                 | image or video | `ServiceMedia` (`ISSUE`)       |
+| `POST /api/technician/service-requests/:id/media`           | `file`                 | image or video | `ServiceMedia`                 |
+| `POST /api/admin/service-requests/:id/media`                | `file`                 | image or video | `ServiceMedia`                 |
 | `POST /api/conversations/:id/messages`                      | `images[]`, `videos[]` | image / video  | `ChatMessage.attachments`      |
 | `PATCH /api/orders/returns/:id/status`                      | `returnLabel`          | PDF or image   | `ReturnRequest.returnLabelUrl` |
 | `POST` / `PATCH /api/admin/products[/:id]`                  | `images[]`             | image          | `Product.imageUrls`            |
@@ -42,7 +44,7 @@ documented in Swagger (`/api/docs`) so the file pickers appear there.
 
 | Rule                                                               | Limit |
 | ------------------------------------------------------------------ | ----- |
-| Media per service request (`attachments` + `images` + `videos`)    | 10    |
+| Media per service request (`images` + `videos`)                    | 10    |
 | Attachments per chat message (`attachments` + `images` + `videos`) | 5     |
 | Images per product request                                         | 10    |
 
@@ -66,12 +68,6 @@ async function submitServiceRequest(
   form.append('categoryId', values.categoryId);
   form.append('addressId', values.addressId);
   form.append('description', values.description);
-  if (values.hostedUrls?.length) {
-    form.append(
-      'attachments',
-      JSON.stringify(values.hostedUrls.map((url) => ({ url }))),
-    );
-  }
   for (const file of imageFiles) form.append('images', file);
   for (const file of videoFiles) form.append('videos', file);
 
@@ -100,7 +96,7 @@ straight from the response without a second request.
 
 ## Examples
 
-Submit a service request with photos, a clip, and one already-hosted URL:
+Submit a service request with photos and a clip:
 
 ```bash
 curl -X POST http://localhost:5000/api/service-requests \
@@ -110,16 +106,15 @@ curl -X POST http://localhost:5000/api/service-requests \
   -F "description=Low suction and a rattling sound." \
   -F "preferredDate=2026-09-02T09:00:00.000Z" \
   -F "preferredTime=09:00-12:00" \
-  -F 'attachments=[{"url":"https://uploads.example.com/photo.jpg","mimeType":"image/jpeg"}]' \
   -F "images=@/path/to/inlet.jpg" \
   -F "images=@/path/to/canister.jpg" \
   -F "videos=@/path/to/noise.mp4"
 ```
 
-Attach a technician "after" photo to an existing request:
+Attach a technician "after" photo to an assigned request:
 
 ```bash
-curl -X POST http://localhost:5000/api/service-requests/<id>/media \
+curl -X POST http://localhost:5000/api/technician/service-requests/<id>/media \
   -H "Authorization: Bearer <token>" \
   -F "kind=AFTER" \
   -F "file=@/path/to/after.jpg"

@@ -13,6 +13,7 @@ import { NotificationsModule } from './features/notifications/notifications.modu
 import { OrdersModule } from './features/orders/orders.module';
 import { PaymentsModule } from './features/payments/payments.module';
 import { ServiceRequestsModule } from './features/service-requests/service-requests.module';
+import { TechnicianModule } from './features/technician/technician.module';
 import { TrackingModule } from './features/tracking/tracking.module';
 import { UsersModule } from './features/users/users.module';
 
@@ -27,6 +28,7 @@ import { UsersModule } from './features/users/users.module';
     UsersModule,
     CatalogModule,
     ServiceRequestsModule,
+    TechnicianModule,
     TrackingModule,
     CallsModule,
     OrdersModule,

@@ -8,6 +8,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { StripeService } from '../payments/stripe.service';
 import { QuoteCounterofferService } from './quote-counteroffer.service';
 import { RequestsController } from './requests.controller';
+import { RequestsService } from './requests.service';
 
 function file(
   fieldname: string,
@@ -64,32 +65,28 @@ describe('RequestsController customer submission media', () => {
     cloudinary.uploadFile.mockImplementation((upload: Express.Multer.File) =>
       Promise.resolve(`https://res.cloudinary.com/demo/${upload.originalname}`),
     );
+    const mediaUploads = new MediaUploadService(
+      cloudinary as unknown as CloudinaryService,
+    );
     controller = new RequestsController(
       prisma as unknown as PrismaService,
-      {} as StripeService,
       {} as QuoteCounterofferService,
       notifications as unknown as NotificationsService,
-      new MediaUploadService(cloudinary as unknown as CloudinaryService),
+      mediaUploads,
+      new RequestsService(
+        prisma as unknown as PrismaService,
+        notifications as unknown as NotificationsService,
+        {} as StripeService,
+        mediaUploads,
+      ),
     );
   });
 
-  it('uploads images and videos as ISSUE media alongside hosted URLs', async () => {
-    await controller.create(
-      customer,
-      {
-        ...body,
-        attachments: [
-          {
-            url: 'https://uploads.example.com/photo.jpg',
-            mimeType: 'image/jpeg',
-          },
-        ],
-      },
-      {
-        images: [file('images', 'inlet.png', 'image/png')],
-        videos: [file('videos', 'noise.mp4', 'video/mp4')],
-      },
-    );
+  it('uploads images and videos as ISSUE media', async () => {
+    await controller.create(customer, body, {
+      images: [file('images', 'inlet.png', 'image/png')],
+      videos: [file('videos', 'noise.mp4', 'video/mp4')],
+    });
 
     expect(cloudinary.uploadFile).toHaveBeenCalledTimes(2);
     expect(cloudinary.uploadFile).toHaveBeenCalledWith(
@@ -97,11 +94,6 @@ describe('RequestsController customer submission media', () => {
       'vacuumCare/service-requests',
     );
     expect(created?.data.media?.create).toEqual([
-      {
-        url: 'https://uploads.example.com/photo.jpg',
-        mimeType: 'image/jpeg',
-        kind: MediaKind.ISSUE,
-      },
       {
         url: 'https://res.cloudinary.com/demo/inlet.png',
         mimeType: 'image/png',
@@ -127,22 +119,11 @@ describe('RequestsController customer submission media', () => {
 
   it('counts uploads against the attachment cap', async () => {
     await expect(
-      controller.create(
-        customer,
-        {
-          ...body,
-          attachments: Array.from({ length: 8 }, (_, index) => ({
-            url: `https://uploads.example.com/photo-${index}.jpg`,
-          })),
-        },
-        {
-          images: [
-            file('images', 'a.png', 'image/png'),
-            file('images', 'b.png', 'image/png'),
-            file('images', 'c.png', 'image/png'),
-          ],
-        },
-      ),
+      controller.create(customer, body, {
+        images: Array.from({ length: 11 }, (_, index) =>
+          file('images', `photo-${index}.png`, 'image/png'),
+        ),
+      }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(cloudinary.uploadFile).not.toHaveBeenCalled();
   });
@@ -152,6 +133,7 @@ describe('RequestsController customer submission media', () => {
       id: 'request-1',
       customerId: customer.id,
       technicianId: null,
+      requestNumber: 'SR-ABC1234567',
     });
     prisma.serviceMedia.create.mockResolvedValue({ id: 'media-1' });
 
@@ -181,6 +163,7 @@ describe('RequestsController customer submission media', () => {
       id: 'request-1',
       customerId: customer.id,
       technicianId: null,
+      requestNumber: 'SR-ABC1234567',
     });
 
     await expect(
