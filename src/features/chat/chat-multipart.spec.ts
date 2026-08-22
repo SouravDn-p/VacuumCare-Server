@@ -22,6 +22,7 @@ describe('POST /conversations/:id/messages multipart', () => {
     chatMessage: { create: jest.fn() },
     conversation: { update: jest.fn() },
     notification: { create: jest.fn() },
+    user: { findMany: jest.fn().mockResolvedValue([]) },
   };
   const prisma = {
     conversation: { findUnique: jest.fn() },
@@ -41,7 +42,7 @@ describe('POST /conversations/:id/messages multipart', () => {
       providers: [
         { provide: PrismaService, useValue: prisma },
         { provide: CloudinaryService, useValue: cloudinary },
-        { provide: NotificationsService, useValue: { notifyUser: jest.fn() } },
+        { provide: NotificationsService, useValue: { notifyUser: jest.fn(), fanOutToActiveAdmins: jest.fn() } },
         MediaUploadService,
       ],
     })

@@ -20,10 +20,15 @@ export class ChatAttachmentDto {
 }
 
 export class SendMessageDto {
-  @ApiProperty({ example: 'I will arrive within 20 minutes.', maxLength: 4000 })
+  @ApiPropertyOptional({
+    example: 'I will arrive within 20 minutes.',
+    maxLength: 4000,
+    description: 'Optional when the message includes attachments.',
+  })
+  @IsOptional()
   @IsString()
   @MaxLength(4000)
-  body!: string;
+  body?: string;
 
   @ApiPropertyOptional({
     type: [ChatAttachmentDto],

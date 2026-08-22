@@ -16,6 +16,7 @@ import { ServiceRequestsModule } from './features/service-requests/service-reque
 import { TechnicianModule } from './features/technician/technician.module';
 import { TrackingModule } from './features/tracking/tracking.module';
 import { UsersModule } from './features/users/users.module';
+import { ContactModule } from './features/contact/contact.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { UsersModule } from './features/users/users.module';
     OrdersModule,
     PaymentsModule,
     NotificationsModule,
+    ContactModule,
   ],
   controllers: [AppController],
   providers: [AppService],

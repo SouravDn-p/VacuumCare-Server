@@ -279,16 +279,18 @@ model ServiceRequestStatusHistory {
 }
 
 model Conversation {
-  id           String         @id @default(cuid())
-  requestId    String         @unique
+  id           String          @id @default(cuid())
+  requestId    String?         @unique
   customerId   String
   technicianId String?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  request      ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  customer     User           @relation("ConversationCustomer", fields: [customerId], references: [id], onDelete: Cascade)
-  technician   User?          @relation("ConversationTechnician", fields: [technicianId], references: [id], onDelete: SetNull)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  request      ServiceRequest? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  customer     User            @relation("ConversationCustomer", fields: [customerId], references: [id], onDelete: Cascade)
+  technician   User?           @relation("ConversationTechnician", fields: [technicianId], references: [id], onDelete: SetNull)
   messages     ChatMessage[]
+
+  @@index([customerId, requestId])
 }
 
 model ChatMessage {
