@@ -27,6 +27,7 @@ import type {
   PreviewCheckoutDto,
 } from './dto/checkout.dto';
 import { checkoutCurrency, quoteOrderTotals } from './order-pricing';
+import { checkoutRedirectUrls, stripeSecretKey } from './checkout-urls';
 import { orderDetailInclude } from '../orders/order-detail';
 
 @Injectable()
@@ -37,23 +38,11 @@ export class StripeService {
   ) {}
 
   private client(): Stripe {
-    const secret = process.env.STRIPE_SECRET_KEY;
-    if (!secret)
-      throw new InternalServerErrorException('Stripe is not configured');
-    return new Stripe(secret);
+    return new Stripe(stripeSecretKey());
   }
 
   private currency(): string {
     return checkoutCurrency();
-  }
-
-  private clientUrl(): string {
-    const value = process.env.CLIENT_APP_URL;
-    if (!value)
-      throw new InternalServerErrorException(
-        'CLIENT_APP_URL is required for Checkout',
-      );
-    return value.replace(/\/$/, '');
   }
 
   async createOrderCheckout(user: AuthUser, dto: CreateOrderCheckoutDto) {
@@ -174,8 +163,7 @@ export class StripeService {
           mode: 'payment',
           client_reference_id: prepared.payment.id,
           customer_email: user.email,
-          success_url: `${this.clientUrl()}/orders/${prepared.order.id}/success?session_id={CHECKOUT_SESSION_ID}`,
-          cancel_url: `${this.clientUrl()}/orders/${prepared.order.id}/cancelled`,
+          ...checkoutRedirectUrls({ orderId: prepared.order.id }),
           metadata: {
             paymentId: prepared.payment.id,
             orderId: prepared.order.id,
@@ -391,57 +379,106 @@ export class StripeService {
       },
       orderBy: { createdAt: 'desc' },
     });
-    if (existing?.stripePaymentIntentId) {
-      const intent = await this.client().paymentIntents.retrieve(
-        existing.stripePaymentIntentId,
-      );
+    if (existing?.status === PaymentStatus.AUTHORIZED) {
       return {
         paymentId: existing.id,
-        paymentIntentId: intent.id,
-        clientSecret: intent.client_secret,
-        status: intent.status,
+        requestId,
+        checkoutUrl: null,
+        checkoutSessionId: existing.stripeCheckoutSessionId,
         amount: Number(existing.amount),
         currency: existing.currency,
       };
     }
-    const payment = await this.prisma.payment.create({
-      data: {
-        userId: user.id,
-        quotationId: quote.id,
-        purpose: PaymentPurpose.QUOTATION,
-        amount: authorizedAmount,
-        currency: this.currency(),
-        status: PaymentStatus.PENDING,
-        idempotencyKey: randomUUID(),
-      },
-    });
-    try {
-      const intent = await this.client().paymentIntents.create(
-        {
-          amount: this.toMinorUnit(authorizedAmount),
+    if (existing?.stripeCheckoutSessionId) {
+      const session = await this.client().checkout.sessions.retrieve(
+        existing.stripeCheckoutSessionId,
+      );
+      if (session.status === 'open' && session.url) {
+        return {
+          paymentId: existing.id,
+          requestId,
+          checkoutUrl: session.url,
+          checkoutSessionId: session.id,
+          amount: Number(existing.amount),
+          currency: existing.currency,
+        };
+      }
+    }
+    const payment =
+      existing ??
+      (await this.prisma.payment.create({
+        data: {
+          userId: user.id,
+          quotationId: quote.id,
+          purpose: PaymentPurpose.QUOTATION,
+          amount: authorizedAmount,
           currency: this.currency(),
-          capture_method: 'manual',
+          status: PaymentStatus.PENDING,
+          idempotencyKey: randomUUID(),
+        },
+      }));
+    try {
+      const session = await this.client().checkout.sessions.create(
+        {
+          mode: 'payment',
+          client_reference_id: payment.id,
+          customer_email: user.email,
+          ...checkoutRedirectUrls({
+            requestId,
+            paymentId: payment.id,
+          }),
           metadata: {
             paymentId: payment.id,
             quotationId: quote.id,
             requestId,
             purpose: PaymentPurpose.QUOTATION,
           },
+          payment_intent_data: {
+            capture_method: 'manual',
+            metadata: {
+              paymentId: payment.id,
+              quotationId: quote.id,
+              requestId,
+              purpose: PaymentPurpose.QUOTATION,
+            },
+          },
+          line_items: [
+            {
+              quantity: 1,
+              price_data: {
+                currency: this.currency(),
+                unit_amount: this.toMinorUnit(authorizedAmount),
+                product_data: {
+                  name: `Service quote ${quote.quoteNumber}`,
+                },
+              },
+            },
+          ],
         },
-        { idempotencyKey: payment.idempotencyKey! },
+        {
+          idempotencyKey: existing?.stripeCheckoutSessionId
+            ? randomUUID()
+            : payment.idempotencyKey!,
+        },
       );
+      if (!session.url)
+        throw new InternalServerErrorException(
+          'Stripe did not return a Checkout URL',
+        );
+      const paymentIntentId = this.checkoutPaymentIntentId(session);
       const updated = await this.prisma.payment.update({
         where: { id: payment.id },
         data: {
-          stripePaymentIntentId: intent.id,
+          stripeCheckoutSessionId: session.id,
+          stripePaymentIntentId: paymentIntentId,
           status: PaymentStatus.PROCESSING,
         },
       });
       return {
         paymentId: updated.id,
-        paymentIntentId: intent.id,
-        clientSecret: intent.client_secret,
-        status: intent.status,
+        requestId,
+        checkoutUrl: session.url,
+        checkoutSessionId: session.id,
         amount: Number(updated.amount),
         currency: updated.currency,
       };
@@ -450,7 +487,7 @@ export class StripeService {
         where: { id: payment.id },
         data: {
           status: PaymentStatus.FAILED,
-          failureMessage: 'Could not create Stripe PaymentIntent',
+          failureMessage: 'Could not create Stripe Checkout Session',
         },
       });
       throw error;
@@ -793,6 +830,10 @@ export class StripeService {
       event.type === 'checkout.session.async_payment_succeeded'
     ) {
       const session = event.data.object;
+      if (session.metadata?.purpose === PaymentPurpose.QUOTATION) {
+        await this.attachServiceCheckoutSession(session);
+        return;
+      }
       if (session.payment_status === 'paid')
         await this.completeOrderPayment(session);
       return;
@@ -1134,6 +1175,30 @@ export class StripeService {
         },
       });
     });
+  }
+
+  private async attachServiceCheckoutSession(session: Stripe.Checkout.Session) {
+    const paymentId = session.metadata?.paymentId;
+    if (!paymentId) return;
+    const paymentIntentId = this.checkoutPaymentIntentId(session);
+    await this.prisma.payment.updateMany({
+      where: { id: paymentId, purpose: PaymentPurpose.QUOTATION },
+      data: {
+        stripeCheckoutSessionId: session.id,
+        ...(paymentIntentId ? { stripePaymentIntentId: paymentIntentId } : {}),
+      },
+    });
+    if (!paymentIntentId) return;
+    const intent = await this.client().paymentIntents.retrieve(paymentIntentId);
+    if (intent.status === 'requires_capture') {
+      await this.authorizeServicePaymentIntent(intent);
+    }
+  }
+
+  private checkoutPaymentIntentId(session: Stripe.Checkout.Session) {
+    const value = session.payment_intent;
+    if (!value) return undefined;
+    return typeof value === 'string' ? value : value.id;
   }
 
   private checkoutResponse(

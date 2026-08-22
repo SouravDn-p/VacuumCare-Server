@@ -150,16 +150,21 @@ export class ServiceAuthorizationResponseDto {
   @ApiProperty({ example: 'clx-payment-id' })
   paymentId!: string;
 
-  @ApiProperty({ example: 'pi_...' })
-  paymentIntentId!: string;
+  @ApiProperty({ example: 'clx-request-id' })
+  requestId!: string;
 
-  @ApiProperty({ example: 'pi_..._secret_...' })
-  clientSecret!: string;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'https://checkout.stripe.com/c/pay/cs_test_...',
+    description:
+      'Open this URL immediately. Null when the quote is already authorized.',
+  })
+  checkoutUrl!: string | null;
 
-  @ApiProperty({ example: 'requires_confirmation' })
-  status!: string;
+  @ApiPropertyOptional({ nullable: true, example: 'cs_test_...' })
+  checkoutSessionId!: string | null;
 
-  @ApiProperty({ example: 245 })
+  @ApiProperty({ example: 180 })
   amount!: number;
 
   @ApiProperty({ example: 'cad' })

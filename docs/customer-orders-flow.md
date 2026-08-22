@@ -20,7 +20,7 @@ Addresses           GET  /users/me/addresses
 Pay from cart       POST /checkout/cart
 Buy Now             POST /checkout/orders
 Open Stripe URL     checkoutUrl from the response
-Return to app       CLIENT_APP_URL/orders/:orderId/success|cancelled
+Return to app       FRONTEND_PAYMENT_SUCCESS_URL | FRONTEND_PAYMENT_CANCEL_URL
 Confirm payment     GET  /orders/:id
                     GET  /payments/:id
 My Orders           GET  /orders?group=all|active|complete
@@ -157,11 +157,12 @@ POST /checkout/orders
 
 Retry the same `idempotencyKey` to recover an existing unpaid session. A new key starts a new reservation.
 
-Stripe success/cancel URLs (configured from `CLIENT_APP_URL`):
+Stripe success/cancel URLs (from `FRONTEND_PAYMENT_SUCCESS_URL` and
+`FRONTEND_PAYMENT_CANCEL_URL`):
 
 ```text
-{CLIENT_APP_URL}/orders/{orderId}/success?session_id={CHECKOUT_SESSION_ID}
-{CLIENT_APP_URL}/orders/{orderId}/cancelled
+{FRONTEND_PAYMENT_SUCCESS_URL}?orderId={orderId}&session_id={CHECKOUT_SESSION_ID}
+{FRONTEND_PAYMENT_CANCEL_URL}?orderId={orderId}
 ```
 
 The `session_id` query param is for the client’s own logging only. Payment completion is webhook-driven.
@@ -262,4 +263,4 @@ Shipping fee on stored orders is `total - subtotal - tax` (currently `0` unless 
 8. Track / details: `GET /orders/:id` (`timeline`, `carrier`, `trackingNumber`).
 9. Returns and reorder as above.
 
-Required env (server only): `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_CURRENCY`, `TAX_RATE`, `CLIENT_APP_URL`. Forward webhooks with `stripe listen --forward-to localhost:3000/api/webhooks/stripe`.
+Required env (server only): `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_CURRENCY`, `STRIPE_WEBHOOK_TOLERANCE_SECONDS`, `FRONTEND_PAYMENT_SUCCESS_URL`, `FRONTEND_PAYMENT_CANCEL_URL`, `TAX_RATE`. Forward webhooks with `stripe listen --forward-to localhost:5000/api/webhooks/stripe`. See [stripe-payment.md](stripe-payment.md).

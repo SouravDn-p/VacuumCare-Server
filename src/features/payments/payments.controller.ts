@@ -71,7 +71,7 @@ export class CheckoutController {
   @ApiOperation({
     summary: 'Create a hosted Stripe Checkout Session for shop items',
     description:
-      'Prices, tax, shipping address ownership, and stock are verified by the server. The returned URL is opened by the client; payment completion comes only from the Stripe webhook.',
+      'Returns checkoutUrl. Redirect the browser there immediately. Cards are entered only on Stripe. Payment completion comes from the webhook after FRONTEND_PAYMENT_SUCCESS_URL.',
   })
   @ApiCreatedResponse({ type: CheckoutSessionResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
@@ -88,7 +88,7 @@ export class CheckoutController {
   @ApiOperation({
     summary: 'Create a hosted Stripe Checkout Session from the saved cart',
     description:
-      'The server reads the saved cart, recalculates prices, and reserves inventory before creating the Stripe Checkout Session.',
+      'Returns checkoutUrl. Redirect the browser there immediately. After payment Stripe sends the customer to FRONTEND_PAYMENT_SUCCESS_URL; this API marks the order paid from the webhook.',
   })
   @ApiCreatedResponse({ type: CheckoutSessionResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
@@ -112,9 +112,9 @@ export class PaymentsController {
   @Post('service-requests/:requestId/authorization')
   @ApiOperation({
     summary:
-      'Create a Stripe manual-capture authorization for an accepted service quote',
+      'Open Stripe Checkout for an accepted service quote (hosted payment page)',
     description:
-      'The client confirms the returned PaymentIntent client secret using Stripe SDK. It must never submit a provider reference or card details to this API.',
+      'Returns checkoutUrl. The frontend must redirect the browser there immediately. After the customer pays, Stripe sends them to FRONTEND_PAYMENT_SUCCESS_URL and this API records the hold from the webhook. Do not collect cards or confirm a PaymentIntent in the app.',
   })
   @ApiParam({ name: 'requestId', description: 'Service request ID' })
   @ApiCreatedResponse({ type: ServiceAuthorizationResponseDto })

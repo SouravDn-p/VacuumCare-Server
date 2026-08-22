@@ -35,7 +35,9 @@ Reject quote          POST /service-requests/:id/quotation/reject
 Counteroffer          POST /service-requests/:id/quotation/counteroffers
 Counteroffer history  GET  /service-requests/:id/quotation/counteroffers
 Authorize card        POST /payments/service-requests/:requestId/authorization
-Confirm Stripe        Stripe SDK + clientSecret (not this API)
+                      then window.location = checkoutUrl
+Confirm Stripe        Stripe Checkout page (not this API)
+Return to app         FRONTEND_PAYMENT_SUCCESS_URL
 Payment status        GET  /payments/:id
 Cancel                POST /service-requests/:id/cancel      until work starts
 Add media             POST /service-requests/:id/media
@@ -95,7 +97,10 @@ Customer may cancel while status is `NEW`, `UNDER_REVIEW`, `QUOTE_SENT`, `ACCEPT
 | `EXPIRED`  | `validUntil` passed; accept/counteroffer fail                           |
 | `CANCELLED`| Request was cancelled after a quote existed                             |
 
-`quotation.negotiatedTotal` is set only after an admin **approves** a counteroffer. Until the customer then **accepts** the quote, the original `totalAmount` is still the list price. After accept, authorization holds `negotiatedTotal ?? totalAmount`.
+There is always **one** `quotation` per request. A counteroffer is not a second quote.
+`totalAmount` is the office list price and is never rewritten. `negotiatedTotal` is
+set only after an admin **approves** a counteroffer. Payment always holds
+`negotiatedTotal ?? totalAmount`. See [One quotation, two totals](#one-quotation-two-totals).
 
 ---
 
@@ -351,7 +356,7 @@ When a quote exists, `quotation` looks like:
 }
 ```
 
-Display `laborAmount`, `partsAmount`, `taxAmount`, `discountAmount`, and `totalAmount`. If `negotiatedTotal` is a number, show it as the approved customer price and still require Accept terms.
+Display `laborAmount`, `partsAmount`, `taxAmount`, `discountAmount`, and `totalAmount` as the office breakdown. If `negotiatedTotal` is a number, show it as the **payable** price and still require Accept terms. Do not treat `counteroffers[]` as another quotation.
 
 ---
 
@@ -480,13 +485,82 @@ curl -X POST 'http://localhost:5000/api/admin/service-requests/clxreq01/quotatio
   -d '{ "note": "Parts cost does not support that total." }'
 ```
 
-After admin **approves**, `GET /service-requests/:id` shows `quotation.negotiatedTotal: 175` and the counteroffer `status: "APPROVED"`. The customer must still call accept with terms. After admin **rejects**, the quote stays `SENT`/`VIEWED`; the customer can accept the original total, reject, or submit another counteroffer.
+After admin **approves**, `GET /service-requests/:id` shows `quotation.negotiatedTotal: 175` (or `180` in the live example below) and the counteroffer `status: "APPROVED"`. Labor, parts, tax, discount, and `totalAmount` stay at the original office figures. The customer must still call accept with terms. After admin **rejects**, `negotiatedTotal` stays `null`, the quote stays `SENT`/`VIEWED`, and the customer can accept the original `totalAmount`, reject the quote, or submit another counteroffer.
+
+---
+
+## One quotation, two totals
+
+A request has a single `quotation` row (`QT-77FDF3C2E2` in the live payload). The
+`counteroffers` array is negotiation history on that same quote. Accepting after an
+approved offer does **not** create a second quotation and does **not** rewrite the
+office line items.
+
+| Field | What it is | After the 180 counteroffer |
+| ----- | ---------- | -------------------------- |
+| `laborAmount` / `partsAmount` / `taxAmount` / `discountAmount` | Office breakdown used to compute the list price | Unchanged (`125 + 45 + 22.10 − 0`) |
+| `totalAmount` | Original office list price | `192.1` forever |
+| `negotiatedTotal` | Admin-approved customer total, or `null` if nobody negotiated | `180` |
+| `quotation.status` | Quote workflow | `ACCEPTED` after the customer accepts terms |
+| `counteroffers[].requestedTotal` | What the customer asked for | `180`, `status: "APPROVED"` |
+| Payment `amount` | Stripe hold / later capture | `negotiatedTotal ?? totalAmount` → **`180`** |
+
+How the UI and payment API should read the quote:
+
+```text
+payable = quotation.negotiatedTotal ?? quotation.totalAmount
+```
+
+Worked example from an accepted request after an approved counteroffer:
+
+```text
+Office quote          totalAmount      = 192.10   (do not charge this)
+Customer asked        requestedTotal   = 180.00
+Admin approved        negotiatedTotal  = 180.00
+Customer accepted     quotation.status = ACCEPTED
+Authorize / capture   payment.amount   = 180.00
+```
+
+```json
+{
+  "quotation": {
+    "id": "cmt3wgz5600014tzyh7lsf6rv",
+    "quoteNumber": "QT-77FDF3C2E2",
+    "laborAmount": 125,
+    "partsAmount": 45,
+    "taxAmount": 22.1,
+    "discountAmount": 0,
+    "totalAmount": 192.1,
+    "negotiatedTotal": 180,
+    "status": "ACCEPTED",
+    "counteroffers": [
+      {
+        "id": "cmt3xm1bw0002y8zy01296is2",
+        "requestedTotal": 180,
+        "status": "APPROVED"
+      }
+    ]
+  }
+}
+```
+
+Show the customer: office total **192.10**, agreed price **180.00**, then Accept terms.
+`POST /payments/service-requests/:requestId/authorization` creates one `Payment` on
+`quotationId` and returns `checkoutUrl`. Redirect the browser there. Stripe is asked
+for **180**, not 192.10. After pay, Stripe sends the customer to
+`FRONTEND_PAYMENT_SUCCESS_URL` and the webhook marks the hold `AUTHORIZED`.
+Admin assign requires that payment `AUTHORIZED` for **180**.
+Later `POST /admin/payments/:id/capture` captures that same 180 hold.
+
+If `negotiatedTotal` is `null` (no approved offer, or admin rejected every offer),
+authorization and capture use `totalAmount` (192.10).
 
 ---
 
 ## 7. Authorize the accepted quote (Stripe)
 
-Call only after `quotation.status === "ACCEPTED"`. Empty body.
+Call only after `quotation.status === "ACCEPTED"`. Empty body. The server picks the
+amount itself: `negotiatedTotal ?? totalAmount`. Redirect to `checkoutUrl`.
 
 ```bash
 curl -X POST 'http://localhost:5000/api/payments/service-requests/clxreq01/authorization' \
@@ -496,35 +570,21 @@ curl -X POST 'http://localhost:5000/api/payments/service-requests/clxreq01/autho
 ```json
 {
   "paymentId": "clxpay01",
-  "paymentIntentId": "pi_3Nxxxxxxxx",
-  "clientSecret": "pi_3Nxxxxxxxx_secret_xxxx",
-  "status": "requires_confirmation",
-  "amount": 192.1,
+  "requestId": "clxreq01",
+  "checkoutUrl": "https://checkout.stripe.com/c/pay/cs_test_...",
+  "checkoutSessionId": "cs_test_...",
+  "amount": 180,
   "currency": "cad"
 }
 ```
 
-Frontend then confirms the PaymentIntent with the Stripe SDK using `clientSecret`. Do not POST card data here. Repeating this call returns the existing intent if one is already pending/processing/authorized.
-
-Poll:
-
-```bash
-curl -X GET 'http://localhost:5000/api/payments/clxpay01' \
-  -H 'Authorization: Bearer <accessToken>'
+```js
+const { checkoutUrl } = await response.json();
+window.location.href = checkoutUrl;
 ```
 
-```json
-{
-  "id": "clxpay01",
-  "purpose": "QUOTATION",
-  "status": "AUTHORIZED",
-  "amount": 192.1,
-  "currency": "cad",
-  "stripePaymentIntentId": "pi_3Nxxxxxxxx"
-}
-```
-
-Admin cannot schedule the job until a payment on that quote is `AUTHORIZED`. Capture happens later, after the technician report and customer confirmation.
+Do not confirm a PaymentIntent in the app. After Stripe, the customer lands on
+`FRONTEND_PAYMENT_SUCCESS_URL`. Poll `GET /payments/:paymentId` until `AUTHORIZED`.
 
 ---
 
@@ -644,7 +704,7 @@ curl -X PATCH 'http://localhost:5000/api/notifications/clxnotif01/read' \
 2. **My requests** — `GET /service-requests`, badge by `status`.
 3. **Request detail** — `GET /service-requests/:id`. Branch on `status`.
 4. **Quote** — amounts, expiry, terms checkbox → Accept / Reject / Counteroffer.
-5. **Pay hold** — `POST .../authorization` → Stripe PaymentSheet / `confirmPayment` with `clientSecret`.
+5. **Pay** — `POST .../authorization` → `window.location = checkoutUrl`.
 6. **Scheduled job** — technician window, chat.
 7. **Report** — confirm work.
 8. **Cancelled / completed** — read-only.

@@ -25,6 +25,9 @@ dashboard. Features are organized under `src/features/` by domain.
 
 Shop orders: [docs/customer-orders-flow.md](docs/customer-orders-flow.md)
 
+Stripe (Checkout, service holds, webhooks):
+[docs/stripe-payment.md](docs/stripe-payment.md)
+
 Service requests and quotes:
 [docs/customer-service-requests-flow.md](docs/customer-service-requests-flow.md)
 
@@ -74,13 +77,15 @@ curl -X POST 'http://localhost:5000/api/service-requests/<id>/quotation/accept' 
   -d '{"acceptTerms": true, "termsVersion": "2026-08-17"}'
 ```
 
-Then create the Stripe card hold (empty body) and confirm `clientSecret` with the
-Stripe SDK:
+Then create the Stripe Checkout session (empty body) and redirect to `checkoutUrl`:
 
 ```bash
 curl -X POST 'http://localhost:5000/api/payments/service-requests/<id>/authorization' \
   -H 'Authorization: Bearer <accessToken>'
 ```
+
+The browser opens Stripe. After pay, Stripe sends the customer to
+`FRONTEND_PAYMENT_SUCCESS_URL`. See [docs/stripe-payment.md](docs/stripe-payment.md).
 
 Catalog, addresses, reject, counteroffer, cancel, and report-confirm request and
 response bodies are in the flow doc.
@@ -123,9 +128,11 @@ secret to a mobile/web client):
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_CURRENCY=cad
+STRIPE_WEBHOOK_TOLERANCE_SECONDS=300
+FRONTEND_PAYMENT_SUCCESS_URL=https://arye-sd.vercel.app/payment/success
+FRONTEND_PAYMENT_CANCEL_URL=https://arye-sd.vercel.app/payment/failed
 TAX_RATE=0.14975
-CLIENT_APP_URL=http://localhost:5173  # customer/admin frontend, never the API URL
-CORS_ORIGIN=http://localhost:5173
+CORS_ORIGIN=http://localhost:3000,https://arye-sd.vercel.app
 ```
 
 For production password-reset emails, also configure a verified Resend sender:
@@ -139,7 +146,7 @@ PASSWORD_RESET_URL=https://app.example.com/reset-password
 For local webhook testing, install the Stripe CLI, authenticate it, then run:
 
 ```bash
-stripe listen --forward-to localhost:3000/api/webhooks/stripe
+stripe listen --forward-to localhost:5000/api/webhooks/stripe
 ```
 
 Copy the CLI-provided `whsec_...` value to `STRIPE_WEBHOOK_SECRET`. Use Stripe

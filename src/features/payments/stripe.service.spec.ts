@@ -42,20 +42,25 @@ describe('StripeService service authorization totals', () => {
   const notifications = {
     fanOutToActiveAdmins: jest.fn(),
   };
-  const paymentIntents = {
+  const sessions = {
     create: jest.fn(),
+    retrieve: jest.fn(),
   };
   let service: StripeService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.FRONTEND_PAYMENT_SUCCESS_URL =
+      'https://arye-sd.vercel.app/payment/success';
+    process.env.FRONTEND_PAYMENT_CANCEL_URL =
+      'https://arye-sd.vercel.app/payment/failed';
     service = new StripeService(
       prisma as unknown as PrismaService,
       notifications as unknown as NotificationsService,
     );
     jest
       .spyOn(service as unknown as { client: () => unknown }, 'client')
-      .mockReturnValue({ paymentIntents });
+      .mockReturnValue({ checkout: { sessions } });
     prisma.payment.findFirst.mockResolvedValue(null);
     prisma.payment.create.mockResolvedValue({
       id: 'payment-1',
@@ -66,10 +71,10 @@ describe('StripeService service authorization totals', () => {
       amount: 175,
       currency: 'cad',
     });
-    paymentIntents.create.mockResolvedValue({
-      id: 'pi-1',
-      client_secret: 'secret',
-      status: 'requires_confirmation',
+    sessions.create.mockResolvedValue({
+      id: 'cs-1',
+      url: 'https://checkout.stripe.com/c/pay/cs-1',
+      payment_intent: 'pi-1',
     });
   });
 
@@ -77,6 +82,7 @@ describe('StripeService service authorization totals', () => {
     prisma.serviceRequest.findFirst.mockResolvedValue({
       quotation: {
         id: 'quote-1',
+        quoteNumber: 'QT-1',
         status: QuoteStatus.ACCEPTED,
         validUntil: new Date('2099-01-01T00:00:00.000Z'),
         negotiatedTotal: 175,
@@ -89,8 +95,18 @@ describe('StripeService service authorization totals', () => {
     expect(prisma.payment.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ amount: 175 }),
     });
-    expect(paymentIntents.create).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: 17500 }),
+    expect(sessions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'payment',
+        payment_intent_data: expect.objectContaining({
+          capture_method: 'manual',
+        }),
+        line_items: [
+          expect.objectContaining({
+            price_data: expect.objectContaining({ unit_amount: 17500 }),
+          }),
+        ],
+      }),
       expect.any(Object),
     );
   });
@@ -99,6 +115,7 @@ describe('StripeService service authorization totals', () => {
     prisma.serviceRequest.findFirst.mockResolvedValue({
       quotation: {
         id: 'quote-1',
+        quoteNumber: 'QT-1',
         status: QuoteStatus.ACCEPTED,
         validUntil: new Date('2099-01-01T00:00:00.000Z'),
         negotiatedTotal: null,
@@ -111,8 +128,14 @@ describe('StripeService service authorization totals', () => {
     expect(prisma.payment.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ amount: 192.1 }),
     });
-    expect(paymentIntents.create).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: 19210 }),
+    expect(sessions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        line_items: [
+          expect.objectContaining({
+            price_data: expect.objectContaining({ unit_amount: 19210 }),
+          }),
+        ],
+      }),
       expect.any(Object),
     );
   });
