@@ -52,9 +52,7 @@ import {
 } from './dto/catalog-response.dto';
 
 @ApiTags('Catalog')
-@ApiBearerAuth()
 @Controller('catalog')
-@UseGuards(JwtAuthGuard)
 export class CatalogController {
   constructor(
     private readonly prisma: PrismaService,
@@ -62,6 +60,8 @@ export class CatalogController {
   ) {}
 
   @Get('services')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'List available service categories and issues' })
   @ApiOkResponse({ type: ServiceCategoryResponseDto, isArray: true })
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
@@ -74,7 +74,6 @@ export class CatalogController {
     summary: 'List active product categories for the store filter sidebar',
   })
   @ApiOkResponse({ type: ProductCategoryCountDto, isArray: true })
-  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   async productCategories() {
     const groups = await this.prisma.product.groupBy({
       by: ['category'],
@@ -95,7 +94,6 @@ export class CatalogController {
       'Customer storefront list. Supports store filters: search (name/SKU), categories, price range, in-stock only, sort, and pagination.',
   })
   @ApiOkResponse({ type: ProductPageResponseDto })
-  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   async products(@Query() query: ProductQueryDto) {
     const page = query.page ?? 1;
     const pageSize = Math.min(query.pageSize ?? 24, 100);
@@ -179,7 +177,6 @@ export class CatalogController {
   })
   @ApiParam({ name: 'idOrSlug', description: 'Product ID or SEO slug' })
   @ApiOkResponse({ type: ProductDetailResponseDto })
-  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   async product(@Param('idOrSlug') idOrSlug: string) {
     const product = await this.prisma.product.findFirst({
       where: { isActive: true, OR: [{ id: idOrSlug }, { slug: idOrSlug }] },
@@ -201,6 +198,8 @@ export class CatalogController {
   }
 
   @Post('services')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a service category (admin only)' })
   @ApiCreatedResponse({ type: ServiceCategoryResponseDto })
   @ApiBadRequestResponse({ type: ApiErrorResponseDto })
@@ -224,6 +223,8 @@ export class CatalogController {
   }
 
   @Post('products')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Create a shop product (admin only)',
     description:
@@ -257,6 +258,8 @@ export class CatalogController {
   }
 
   @Patch('products/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Update a shop product (admin only)',
     description:

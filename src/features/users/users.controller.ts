@@ -330,7 +330,10 @@ export class UsersController {
   payments(@CurrentUser() user: AuthUser) {
     return this.prisma.payment.findMany({
       where: { userId: user.id },
-      include: { quotation: { include: { request: true } } },
+      include: {
+        quotation: { include: { request: true } },
+        order: { select: { id: true, orderNumber: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }

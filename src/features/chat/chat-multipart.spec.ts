@@ -8,6 +8,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { CloudinaryService } from '../../service/cloudinary/cloudinary.service';
 import { MediaUploadService } from '../../service/cloudinary/media-upload.service';
 import { ChatController } from './chat.controller';
+import { NotificationsService } from '../notifications/notifications.service';
 
 /**
  * Boots the controller behind the real validation pipe so the multipart path is
@@ -40,6 +41,7 @@ describe('POST /conversations/:id/messages multipart', () => {
       providers: [
         { provide: PrismaService, useValue: prisma },
         { provide: CloudinaryService, useValue: cloudinary },
+        { provide: NotificationsService, useValue: { notifyUser: jest.fn() } },
         MediaUploadService,
       ],
     })

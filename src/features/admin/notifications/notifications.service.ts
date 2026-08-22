@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { adminUtcRange } from '../common/admin-date-range';
+import { NotificationsService } from '../../notifications/notifications.service';
 import {
   AdminNotificationQueryDto,
   BroadcastNotificationDto,
@@ -8,7 +9,10 @@ import {
 
 @Injectable()
 export class AdminNotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async list(userId: string, query: AdminNotificationQueryDto) {
     const dateRange = query.date
@@ -61,13 +65,13 @@ export class AdminNotificationsService {
       select: { id: true },
     });
     if (recipients.length) {
-      await this.prisma.notification.createMany({
-        data: recipients.map((recipient) => ({
-          userId: recipient.id,
+      await this.notifications.createForUsers(
+        recipients.map((recipient) => recipient.id),
+        {
           title: dto.title,
           body: dto.body,
-        })),
-      });
+        },
+      );
     }
     return { recipients: recipients.length };
   }

@@ -52,6 +52,7 @@ describe('ChatController message attachments', () => {
     controller = new ChatController(
       prisma as unknown as PrismaService,
       new MediaUploadService(cloudinary as unknown as CloudinaryService),
+      { notifyUser: jest.fn() } as never,
     );
   });
 

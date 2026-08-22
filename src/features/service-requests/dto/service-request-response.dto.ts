@@ -59,6 +59,18 @@ export class QuoteCounterofferResponseDto {
   statusHistory!: QuoteCounterofferStatusHistoryResponseDto[];
 }
 
+export class QuotePaymentResponseDto {
+  @ApiProperty({ example: 'payment-id' }) id!: string;
+  @ApiProperty({ example: 'QUOTATION' }) purpose!: string;
+  @ApiProperty({ example: 'AUTHORIZED' }) status!: string;
+  @ApiProperty({ example: 180 }) amount!: number;
+  @ApiProperty({ example: 'cad' }) currency!: string;
+  @ApiPropertyOptional({ nullable: true, example: 'cs_test_...' })
+  stripeCheckoutSessionId?: string | null;
+  @ApiPropertyOptional({ nullable: true, example: 'pi_...' })
+  stripePaymentIntentId?: string | null;
+}
+
 export class QuoteResponseDto {
   @ApiProperty({ example: 'quote-id' }) id!: string;
   @ApiProperty({ example: 'QT-AB12CD34' }) quoteNumber!: string;
@@ -78,6 +90,8 @@ export class QuoteResponseDto {
   @ApiPropertyOptional({ nullable: true }) notes!: string | null;
   @ApiPropertyOptional({ type: [QuoteCounterofferResponseDto] })
   counteroffers?: QuoteCounterofferResponseDto[];
+  @ApiPropertyOptional({ type: [QuotePaymentResponseDto] })
+  payments?: QuotePaymentResponseDto[];
 }
 
 export class InletCountResponseDto {

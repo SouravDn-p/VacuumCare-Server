@@ -41,6 +41,7 @@ describe('RequestsController customer submission media', () => {
   const notifications = {
     createForUser: jest.fn(),
     fanOutToActiveAdmins: jest.fn(),
+    notifyUsers: jest.fn(),
   };
   const cloudinary = { uploadFile: jest.fn() };
   let controller: RequestsController;

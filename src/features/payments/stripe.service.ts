@@ -749,6 +749,7 @@ export class StripeService {
           data: { orderId, paymentId: payment.id, refundId: refund.id },
         },
       });
+      this.notifications.notifyUser(order.customerId);
     });
     return this.prisma.returnRequest.findUniqueOrThrow({
       where: { id: returnRequest.id },
@@ -763,7 +764,48 @@ export class StripeService {
     if (!payment) throw new NotFoundException('Payment not found');
     if (user.role !== UserRole.ADMIN && payment.userId !== user.id)
       throw new ForbiddenException();
-    return payment;
+    const reconciled = await this.reconcileOpenCheckoutPayment(payment);
+    return reconciled ?? payment;
+  }
+
+  /**
+   * Success-page polling must not depend on the webhook arriving first.
+   * If Checkout already finished, apply the same completion path here.
+   */
+  private async reconcileOpenCheckoutPayment(payment: {
+    id: string;
+    purpose: PaymentPurpose;
+    status: PaymentStatus;
+    stripeCheckoutSessionId: string | null;
+  }) {
+    const awaitingConfirmation =
+      payment.status === PaymentStatus.PENDING ||
+      payment.status === PaymentStatus.PROCESSING;
+    if (!awaitingConfirmation || !payment.stripeCheckoutSessionId) return null;
+
+    try {
+      const session = await this.client().checkout.sessions.retrieve(
+        payment.stripeCheckoutSessionId,
+        { expand: ['payment_intent'] },
+      );
+
+      if (payment.purpose === PaymentPurpose.QUOTATION) {
+        if (session.status !== 'complete') return null;
+        await this.attachServiceCheckoutSession(session);
+      } else if (payment.purpose === PaymentPurpose.ORDER) {
+        if (session.payment_status !== 'paid') return null;
+        await this.completeOrderPayment(session);
+      } else {
+        return null;
+      }
+
+      return this.prisma.payment.findUnique({
+        where: { id: payment.id },
+        include: { order: true, quotation: { include: { request: true } } },
+      });
+    } catch {
+      return null;
+    }
   }
 
   async handleWebhook(rawBody: Buffer, signature: string | undefined) {
@@ -938,6 +980,7 @@ export class StripeService {
           data: { orderId: payment.orderId },
         },
       });
+      this.notifications.notifyUser(payment.userId);
       await this.notifications.fanOutToActiveAdmins(
         {
           title: 'Order paid',
@@ -1090,7 +1133,8 @@ export class StripeService {
       if (
         !payment ||
         payment.purpose !== PaymentPurpose.QUOTATION ||
-        payment.stripePaymentIntentId !== intent.id ||
+        (payment.stripePaymentIntentId != null &&
+          payment.stripePaymentIntentId !== intent.id) ||
         intent.currency !== payment.currency ||
         intent.amount !== this.toMinorUnit(payment.amount)
       ) {
@@ -1103,7 +1147,11 @@ export class StripeService {
           id: payment.id,
           status: { in: [PaymentStatus.PENDING, PaymentStatus.PROCESSING] },
         },
-        data: { status: PaymentStatus.AUTHORIZED, authorizedAt: new Date() },
+        data: {
+          status: PaymentStatus.AUTHORIZED,
+          authorizedAt: new Date(),
+          stripePaymentIntentId: intent.id,
+        },
       });
       if (authorized.count === 1) {
         await this.notifications.fanOutToActiveAdmins(
@@ -1174,6 +1222,7 @@ export class StripeService {
           },
         },
       });
+      this.notifications.notifyUser(payment.userId);
     });
   }
 

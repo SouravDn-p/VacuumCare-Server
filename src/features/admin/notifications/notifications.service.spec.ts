@@ -17,7 +17,12 @@ describe('AdminNotificationsService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new AdminNotificationsService(prisma as unknown as PrismaService);
+    service = new AdminNotificationsService(
+      prisma as unknown as PrismaService,
+      {
+        createForUsers: jest.fn().mockResolvedValue(0),
+      } as never,
+    );
   });
 
   it('returns filtered admin notifications with a global unread count', async () => {

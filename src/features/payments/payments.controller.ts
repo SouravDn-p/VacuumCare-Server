@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Controller,
   Get,
+  Header,
   Headers,
   HttpCode,
   HttpStatus,
@@ -40,6 +41,8 @@ import {
   StripePaymentResponseDto,
   StripeWebhookReceiptDto,
 } from './dto/checkout.dto';
+import { InvoiceResponseDto } from './dto/invoice.dto';
+import { InvoiceService } from './invoice.service';
 import { StripeService } from './stripe.service';
 
 @ApiTags('Checkout')
@@ -107,7 +110,10 @@ export class CheckoutController {
 @Controller('payments')
 @UseGuards(JwtAuthGuard)
 export class PaymentsController {
-  constructor(private readonly stripe: StripeService) {}
+  constructor(
+    private readonly stripe: StripeService,
+    private readonly invoices: InvoiceService,
+  ) {}
 
   @Post('service-requests/:requestId/authorization')
   @ApiOperation({
@@ -142,7 +148,21 @@ export class PaymentsController {
     return this.stripe.captureServicePayment(user, id);
   }
 
+  @Get(':id/invoice')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate')
+  @ApiOperation({
+    summary: 'Get a printable invoice assembled from an existing payment',
+  })
+  @ApiParam({ name: 'id', description: 'Payment ID' })
+  @ApiOkResponse({ type: InvoiceResponseDto })
+  @ApiForbiddenResponse({ type: ApiErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
+  invoice(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.invoices.forPayment(user, id);
+  }
+
   @Get(':id')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate')
   @ApiOperation({
     summary: 'Get a payment visible to the customer or an admin',
   })

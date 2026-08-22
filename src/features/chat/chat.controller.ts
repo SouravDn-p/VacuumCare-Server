@@ -35,6 +35,7 @@ import {
   SuccessResponseDto,
 } from '../../common/dto/api-response.dto';
 import { PrismaService } from '../../database/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { MediaUploadService } from '../../service/cloudinary/media-upload.service';
 import { SendMessageDto, SendMessageFormDto } from './dto/chat.dto';
 import {
@@ -66,6 +67,7 @@ export class ChatController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly media: MediaUploadService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   @Get()
@@ -223,6 +225,11 @@ export class ChatController {
       }
       return created;
     });
+    const recipientId =
+      user.id === conversation.customerId
+        ? conversation.technicianId
+        : conversation.customerId;
+    if (recipientId) this.notifications.notifyUser(recipientId);
     return message;
   }
 

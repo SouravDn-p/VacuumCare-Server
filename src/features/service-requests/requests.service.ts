@@ -41,7 +41,10 @@ const CUSTOMER_CANCELLABLE = new Set<RequestStatus>([
 
 export const requestDetailInclude = {
   customer: { omit: { passwordHash: true } },
-  technician: { omit: { passwordHash: true } },
+  technician: {
+    omit: { passwordHash: true },
+    include: { technician: true },
+  },
   category: { include: { issues: true } },
   issue: true,
   address: true,
@@ -51,6 +54,18 @@ export const requestDetailInclude = {
       counteroffers: {
         include: { statusHistory: { orderBy: { createdAt: 'asc' as const } } },
         orderBy: { createdAt: 'desc' as const },
+      },
+      payments: {
+        orderBy: { createdAt: 'desc' as const },
+        select: {
+          id: true,
+          purpose: true,
+          status: true,
+          amount: true,
+          currency: true,
+          stripeCheckoutSessionId: true,
+          stripePaymentIntentId: true,
+        },
       },
     },
   },
@@ -287,6 +302,7 @@ export class RequestsService {
         ],
       });
     });
+    this.notifications.notifyUsers([request.customerId, technician.id]);
     return this.withDetails(id, user);
   }
 

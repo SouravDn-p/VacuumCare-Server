@@ -1,4 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { EventEmitter } from 'events';
+import { Observable } from 'rxjs';
+import type { MessageEvent } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client';
 import { UserRole } from '../../../generated/prisma/enums';
 import { PrismaService } from '../../database/prisma.service';
@@ -16,14 +19,22 @@ type NotificationClient = Pick<
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly events = new EventEmitter();
+
+  constructor(private readonly prisma: PrismaService) {
+    this.events.setMaxListeners(0);
+  }
 
   createForUser(
     userId: string,
     payload: NotificationPayload,
     client: NotificationClient = this.prisma,
   ) {
-    return client.notification.create({ data: { userId, ...payload } });
+    const created = client.notification.create({ data: { userId, ...payload } });
+    return Promise.resolve(created).then((notification) => {
+      this.notifyUser(userId);
+      return notification;
+    });
   }
 
   async createForUsers(
@@ -36,6 +47,7 @@ export class NotificationsService {
     const result = await client.notification.createMany({
       data: recipients.map((userId) => ({ userId, ...payload })),
     });
+    this.notifyUsers(recipients);
     return result.count;
   }
 
@@ -52,5 +64,32 @@ export class NotificationsService {
       payload,
       client,
     );
+  }
+
+  notifyUser(userId: string) {
+    this.events.emit(userId, { type: 'refresh' });
+  }
+
+  notifyUsers(userIds: string[]) {
+    for (const userId of new Set(userIds)) {
+      this.notifyUser(userId);
+    }
+  }
+
+  stream(userId: string): Observable<MessageEvent> {
+    return new Observable((subscriber) => {
+      const handler = (payload: { type: string }) => {
+        subscriber.next({ data: payload });
+      };
+      this.events.on(userId, handler);
+      subscriber.next({ data: { type: 'connected' } });
+      const heartbeat = setInterval(() => {
+        subscriber.next({ data: { type: 'ping' } });
+      }, 25000);
+      return () => {
+        clearInterval(heartbeat);
+        this.events.off(userId, handler);
+      };
+    });
   }
 }

@@ -41,6 +41,7 @@ describe('StripeService service authorization totals', () => {
   };
   const notifications = {
     fanOutToActiveAdmins: jest.fn(),
+    notifyUser: jest.fn(),
   };
   const sessions = {
     create: jest.fn(),
@@ -137,6 +138,76 @@ describe('StripeService service authorization totals', () => {
         ],
       }),
       expect.any(Object),
+    );
+  });
+
+  it('reconciles a completed service checkout when the webhook is late', async () => {
+    const paymentIntents = {
+      retrieve: jest.fn().mockResolvedValue({
+        id: 'pi-1',
+        status: 'requires_capture',
+        amount: 18000,
+        currency: 'cad',
+        metadata: { paymentId: 'payment-1', requestId: 'request-1' },
+      }),
+    };
+    jest
+      .spyOn(service as unknown as { client: () => unknown }, 'client')
+      .mockReturnValue({
+        checkout: { sessions },
+        paymentIntents,
+      });
+    sessions.retrieve.mockResolvedValue({
+      id: 'cs_test_1',
+      status: 'complete',
+      payment_intent: 'pi-1',
+      metadata: { paymentId: 'payment-1', purpose: PaymentPurpose.QUOTATION },
+    });
+    prisma.payment.findUnique
+      .mockResolvedValueOnce({
+        id: 'payment-1',
+        userId: 'customer-1',
+        purpose: PaymentPurpose.QUOTATION,
+        status: PaymentStatus.PROCESSING,
+        stripeCheckoutSessionId: 'cs_test_1',
+        stripePaymentIntentId: null,
+        currency: 'cad',
+        amount: 180,
+        quotationId: 'quote-1',
+        order: null,
+        quotation: { request: { id: 'request-1' } },
+      })
+      .mockResolvedValueOnce({
+        id: 'payment-1',
+        purpose: PaymentPurpose.QUOTATION,
+        stripePaymentIntentId: 'pi-1',
+        currency: 'cad',
+        amount: 180,
+        quotationId: 'quote-1',
+      })
+      .mockResolvedValueOnce({
+        id: 'payment-1',
+        userId: 'customer-1',
+        purpose: PaymentPurpose.QUOTATION,
+        status: PaymentStatus.AUTHORIZED,
+        stripeCheckoutSessionId: 'cs_test_1',
+        stripePaymentIntentId: 'pi-1',
+        amount: 180,
+        currency: 'cad',
+        order: null,
+        quotation: { request: { id: 'request-1' } },
+      });
+    prisma.payment.updateMany.mockResolvedValue({ count: 1 });
+
+    const result = await service.paymentForUser(customer, 'payment-1');
+
+    expect(sessions.retrieve).toHaveBeenCalledWith(
+      'cs_test_1',
+      expect.objectContaining({ expand: ['payment_intent'] }),
+    );
+    expect(paymentIntents.retrieve).toHaveBeenCalledWith('pi-1');
+    expect(result).toEqual(
+      expect.objectContaining({ status: PaymentStatus.AUTHORIZED }),
     );
   });
 
