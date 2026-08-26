@@ -1,6 +1,7 @@
 services:
   app:
     build: .
+    image: souravdebanth/vacuumcare-backend:latest
     container_name: vaccume-server
     restart: unless-stopped
 
