@@ -83,6 +83,38 @@ jobs:
               docker-compose.yaml \
               ec2-user@${{ secrets.EC2_HOST }}:${{ env.DEPLOY_PATH }}/docker-compose.yaml
 
+      # ── Install Docker Compose v2 plugin if missing (Amazon Linux) ──
+      - name: Ensure Docker & Compose v2 on EC2
+        run: |
+          ssh -o StrictHostKeyChecking=no \
+              -i key.pem \
+              ec2-user@${{ secrets.EC2_HOST }} << 'EOF'
+            set -e
+
+            # ── Install Docker if not present (Amazon Linux 2023) ──────────
+            if ! command -v docker &>/dev/null; then
+              echo ">>> Installing Docker"
+              sudo dnf install -y docker
+              sudo systemctl enable --now docker
+              sudo usermod -aG docker ec2-user
+            fi
+
+            # ── Install Docker Compose v2 plugin if not present ────────────
+            if ! docker compose version &>/dev/null; then
+              echo ">>> Installing Docker Compose v2 plugin"
+              COMPOSE_VERSION=$(curl -fsSL https://api.github.com/repos/docker/compose/releases/latest \
+                | grep '"tag_name"' | cut -d'"' -f4)
+              sudo mkdir -p /usr/local/lib/docker/cli-plugins
+              sudo curl -fsSL \
+                "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-$(uname -m)" \
+                -o /usr/local/lib/docker/cli-plugins/docker-compose
+              sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+            fi
+
+            echo ">>> Docker version:"  && docker --version
+            echo ">>> Compose version:" && docker compose version
+          EOF
+
       # ── Pull image & restart containers ─────────
       - name: Pull image & bring up containers
         run: |
@@ -91,9 +123,6 @@ jobs:
               ec2-user@${{ secrets.EC2_HOST }} << 'EOF'
             set -e
             cd ${{ env.DEPLOY_PATH }}
-
-            # Docker is installed via amazon-linux-extras on Amazon Linux 2
-            # or via dnf on Amazon Linux 2023 — both use the same commands below
 
             echo ">>> Logging in to Docker Hub"
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | \
