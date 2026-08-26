@@ -67,15 +67,7 @@ jobs:
               ec2-user@${{ secrets.EC2_HOST }} \
               "mkdir -p ${{ env.DEPLOY_PATH }}"
 
-      # ── Transfer .env and docker-compose.yaml ───
-      - name: SCP .env to EC2
-        run: |
-          echo "${{ secrets.ENV_FILE }}" > .env
-          scp -o StrictHostKeyChecking=no \
-              -i key.pem \
-              .env \
-              ec2-user@${{ secrets.EC2_HOST }}:${{ env.DEPLOY_PATH }}/.env
-
+      # ── Transfer docker-compose.yaml only (.env lives on EC2) ───
       - name: SCP docker-compose.yaml to EC2
         run: |
           scp -o StrictHostKeyChecking=no \
@@ -163,4 +155,4 @@ jobs:
       # ── Cleanup local key ───────────────────────
       - name: Remove local SSH key
         if: always()
-        run: rm -f key.pem .env
+        run: rm -f key.pem
