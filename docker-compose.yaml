@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
 
     ports:
-      - '${APP_PORT}:${PORT}'
+      - '${APP_PORT}:${PORT}' 
 
     env_file:
       - .env

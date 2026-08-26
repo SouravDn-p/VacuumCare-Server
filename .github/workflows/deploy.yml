@@ -115,7 +115,7 @@ jobs:
             echo ">>> Compose version:" && docker compose version
           EOF
 
-      # ── Pull image & restart containers ─────────
+      # ── Remove stale compose file & pull image ──
       - name: Pull image & bring up containers
         run: |
           ssh -o StrictHostKeyChecking=no \
@@ -123,6 +123,9 @@ jobs:
               ec2-user@${{ secrets.EC2_HOST }} << 'EOF'
             set -e
             cd ${{ env.DEPLOY_PATH }}
+
+            # Remove old docker-compose.yml so only docker-compose.yaml is used
+            rm -f docker-compose.yml
 
             echo ">>> Logging in to Docker Hub"
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | \
@@ -132,10 +135,10 @@ jobs:
             docker pull ${{ env.IMAGE }}:latest
 
             echo ">>> Stopping old containers (if any)"
-            docker compose down --remove-orphans || true
+            docker compose -f docker-compose.yaml --env-file .env down --remove-orphans || true
 
             echo ">>> Starting containers"
-            docker compose up -d
+            docker compose -f docker-compose.yaml --env-file .env up -d
 
             echo ">>> Pruning dangling images"
             docker image prune -f
@@ -150,11 +153,11 @@ jobs:
             cd ${{ env.DEPLOY_PATH }}
 
             echo "=== Container status ==="
-            docker compose ps
+            docker compose -f docker-compose.yaml --env-file .env ps
 
             echo ""
             echo "=== Last 50 lines of app logs ==="
-            docker compose logs --tail=50 app
+            docker compose -f docker-compose.yaml --env-file .env logs --tail=50 app
           EOF
 
       # ── Cleanup local key ───────────────────────
