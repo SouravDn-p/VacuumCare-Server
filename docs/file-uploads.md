@@ -37,8 +37,9 @@ documented in Swagger (`/api/docs`) so the file pickers appear there.
 | `POST` / `PATCH /api/admin/products[/:id]`                  | `images[]`             | image          | `Product.imageUrls`            |
 | `POST` / `PATCH /api/catalog/products[/:id]`                | `images[]`             | image          | `Product.imageUrls`            |
 | `POST /api/admin/customers/:customerId/equipment/:id/media` | `file`                 | image or video | `EquipmentMedia`               |
-| `PATCH /api/admin/settings`                                 | `logo`                 | image          | `BusinessSettings.logoUrl`     |
-| `POST /api/admin/settings/logo`                             | `logo`                 | image          | `BusinessSettings.logoUrl`     |
+| `PATCH /api/admin/settings`                                 | `logo`                 | image          | `BusinessSettings.logoUrl`             |
+| `POST /api/admin/settings/logo`                             | `logo`                 | image          | `BusinessSettings.logoUrl`             |
+| `POST /api/admin/settings/hero`                             | `hero`                 | image          | `BusinessSettings.landingHeroImageUrl` |
 
 ## Limits
 

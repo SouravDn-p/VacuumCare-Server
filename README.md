@@ -99,15 +99,18 @@ docker compose up --build
 ```
 
 The app waits for PostgreSQL health checks, applies Prisma migrations, seeds the
-admin/catalog, then listens on `http://localhost:3000/api`.
+admin/catalog, then listens on `PORT` inside the container (default `5000`).
+Compose publishes that as `APP_PORT` on the host (default `5001`):
 
 ```text
-Swagger UI:  http://localhost:3000/api/docs
-OpenAPI JSON: http://localhost:3000/api/docs-json
-DB health:    http://localhost:3000/api/health/db
+API:          http://localhost:5001/api
+Swagger UI:   http://localhost:5001/api/docs
+OpenAPI JSON: http://localhost:5001/api/docs-json
+DB health:    http://localhost:5001/api/health/db
 ```
 
-To work on the API outside the app container:
+To work on the API outside the app container (`npm run start:dev` uses `PORT`,
+default `5000`, and `DATABASE_URL` pointing at host `POSTGRES_PORT`):
 
 ```bash
 docker compose up -d postgres
@@ -116,8 +119,113 @@ npm run prisma:generate
 npm run start:dev
 ```
 
+```text
+API:        http://localhost:5000/api
+Swagger UI: http://localhost:5000/api/docs
+```
+
 Do not use `docker compose down --volumes` unless the PostgreSQL data volume is
 intentionally disposable.
+
+Published image:
+
+```bash
+docker pull souravdebanth/vacuumcare-backend:latest
+docker compose up -d
+```
+
+`docker-compose.yaml` already references that image. Provide a filled `.env`
+next to the compose file so Postgres credentials, `PORT` / `APP_PORT`, and
+secrets are injected at runtime.
+
+## Environment variables
+
+Copy `.env.example` to `.env`. Never commit real secrets. Names and purpose:
+
+### Application and Docker
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `PORT` | Yes | Port Nest listens on inside the process / container. Default `5000`. |
+| `APP_PORT` | Docker | Host port mapped to `PORT` (`${APP_PORT}:${PORT}`). Example `5001`. |
+
+### PostgreSQL
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `POSTGRES_USER` | Docker | Database user for the Compose Postgres image. |
+| `POSTGRES_PASSWORD` | Docker | Database password for the Compose Postgres image. |
+| `POSTGRES_DB` | Docker | Database name created in the Compose Postgres image. |
+| `POSTGRES_PORT` | Docker | Host port mapped to Postgres `5432`. Example `5433`. |
+| `DATABASE_URL` | Yes | Prisma connection string. Local Nest → `localhost:${POSTGRES_PORT}`. Compose overrides this to `postgres:5432` for the app container. |
+
+### Auth
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `JWT_SECRET` | Yes | Signs access and refresh tokens. Use at least 32 random characters in production. |
+
+### Agora (video calls)
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `AGORA_APP_ID` | For calls | Agora project App ID. Returned to clients with call tokens. |
+| `AGORA_APP_CERTIFICATE` | For calls | Agora certificate. Server-only; never sent to clients. |
+| `AGORA_TOKEN_TTL_SECONDS` | No | Token lifetime in seconds (60–86400). Default `3600`. |
+
+### Seed users (`prisma db seed`)
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `ADMIN_EMAIL` | No | Seeded admin login. Default `admin@vacuumcare.local`. |
+| `ADMIN_PASSWORD` | No | Seeded admin password. Override the example before any shared environment. |
+| `CUSTOMER_EMAIL` | No | Seeded customer login. Default `customer@vacuumcare.local`. |
+| `CUSTOMER_PASSWORD` | No | Seeded customer password. |
+| `TECHNICIAN_EMAIL` | No | Seeded technician login. Default `technician@vacuumcare.local`. |
+| `TECHNICIAN_PASSWORD` | No | Seeded technician password. |
+
+### Payments and tax
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `STRIPE_SECRET_KEY` | For checkout | Stripe secret key (`sk_test_…` locally). Server-only. |
+| `STRIPE_WEBHOOK_SECRET` | For webhooks | Stripe webhook signing secret (`whsec_…`). Server-only. |
+| `STRIPE_CURRENCY` | No | Charge currency. Default `cad`. |
+| `STRIPE_WEBHOOK_TOLERANCE_SECONDS` | No | Allowed clock skew for webhook signatures. Default `300`. |
+| `TAX_RATE` | No | Decimal tax applied to shop and service totals. Example `0.14975` (Quebec). |
+| `FRONTEND_PAYMENT_SUCCESS_URL` | For Checkout | Absolute URL Stripe redirects to after a successful payment. |
+| `FRONTEND_PAYMENT_CANCEL_URL` | For Checkout | Absolute URL Stripe redirects to if the customer cancels. |
+
+### Client / CORS
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `CORS_ORIGIN` | Yes for browsers | Comma-separated allowed origins, e.g. `http://localhost:3000`. |
+| `CLIENT_APP_URL` | No | Storefront origin for operators and docs. Not read by Nest at runtime. |
+
+### Email (Brevo)
+
+Transactional mail for signup verification, password-reset OTPs, and the public
+contact form. Create an API key at [Brevo](https://www.brevo.com).
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `BREVO_API_KEY` | For email | Brevo transactional API key. |
+| `MAIL_FROM` | For email | From-address. Must be a verified sender in Brevo. |
+| `MAIL_FROM_NAME` | No | Display name in the inbox. Default `Central Care`. |
+| `MAIL_TO` | No | Fallback recipient for contact-form mail when business support email is unset. |
+
+### Cloudinary
+
+Used for avatars, product images, service/chat media, equipment photos, the
+business logo, the landing hero image, and return labels.
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `CLOUDINARY_CLOUD_NAME` | For uploads | Cloudinary cloud name. |
+| `CLOUDINARY_API_KEY` | For signed uploads | Cloudinary API key. |
+| `CLOUDINARY_API_SECRET` | For signed uploads | Cloudinary API secret. Server-only. |
+| `CLOUDINARY_UPLOAD_PRESET` | No | Unsigned preset name. Leave blank to use signed uploads. |
 
 ## Stripe configuration
 
@@ -129,18 +237,10 @@ STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_CURRENCY=cad
 STRIPE_WEBHOOK_TOLERANCE_SECONDS=300
-FRONTEND_PAYMENT_SUCCESS_URL=https://arye-sd.vercel.app/payment/success
-FRONTEND_PAYMENT_CANCEL_URL=https://arye-sd.vercel.app/payment/failed
+FRONTEND_PAYMENT_SUCCESS_URL=http://localhost:3000/payment/success
+FRONTEND_PAYMENT_CANCEL_URL=http://localhost:3000/payment/failed
 TAX_RATE=0.14975
-CORS_ORIGIN=http://localhost:3000,https://arye-sd.vercel.app
-```
-
-For production password-reset emails, also configure a verified Resend sender:
-
-```env
-RESEND_API_KEY=re_...
-RESET_EMAIL_FROM=support@example.com
-PASSWORD_RESET_URL=https://app.example.com/reset-password
+CORS_ORIGIN=http://localhost:3000
 ```
 
 For local webhook testing, install the Stripe CLI, authenticate it, then run:

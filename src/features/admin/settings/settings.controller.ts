@@ -28,12 +28,15 @@ import {
   UpdateBusinessLogoDto,
   UpdateBusinessSettingsDto,
   UpdateBusinessSettingsFormDto,
+  UpdateLandingHeroDto,
   UploadBusinessLogoFormDto,
+  UploadLandingHeroFormDto,
 } from './dto/settings.dto';
 import { BusinessSettingsResponseDto } from './dto/settings-response.dto';
 import { AdminSettingsService } from './settings.service';
 
 const LOGO_FOLDER = 'vacuumCare/logos';
+const HERO_FOLDER = 'vacuumCare/hero';
 
 @ApiTags('Admin Settings')
 @ApiBearerAuth()
@@ -94,5 +97,32 @@ export class AdminSettingsController {
     this.media.assertImages([logo]);
     const [logoUrl] = await this.media.uploadUrls([logo], LOGO_FOLDER);
     return this.settings.update({ logoUrl });
+  }
+
+  @Patch('hero')
+  @ApiOperation({ summary: 'Update the public landing hero image URL' })
+  @ApiOkResponse({ type: BusinessSettingsResponseDto })
+  updateHero(@Body() dto: UpdateLandingHeroDto) {
+    return this.settings.update({
+      landingHeroImageUrl: dto.landingHeroImageUrl,
+    });
+  }
+
+  @Post('hero')
+  @ApiOperation({
+    summary: 'Upload a landing hero image through Cloudinary',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: UploadLandingHeroFormDto })
+  @ApiOkResponse({ type: BusinessSettingsResponseDto })
+  @UseInterceptors(FileInterceptor('hero'))
+  async uploadHero(@UploadedFile() hero?: Express.Multer.File) {
+    if (!hero) throw new BadRequestException('A hero image is required');
+    this.media.assertImages([hero]);
+    const [landingHeroImageUrl] = await this.media.uploadUrls(
+      [hero],
+      HERO_FOLDER,
+    );
+    return this.settings.update({ landingHeroImageUrl });
   }
 }

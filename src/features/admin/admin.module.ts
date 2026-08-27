@@ -28,6 +28,7 @@ import { AdminScheduleService } from './schedule/schedule.service';
 import { AdminServiceRequestsController } from './service-requests/service-requests.controller';
 import { AdminServiceRequestsService } from './service-requests/service-requests.service';
 import { AdminSettingsController } from './settings/settings.controller';
+import { PublicSettingsController } from './settings/public-settings.controller';
 import { AdminSettingsService } from './settings/settings.service';
 import { AdminTechniciansController } from './technicians/technicians.controller';
 import { AdminTechniciansService } from './technicians/technicians.service';
@@ -50,6 +51,7 @@ import { AdminTechniciansService } from './technicians/technicians.service';
     AdminReportsController,
     AdminNotificationsController,
     AdminSettingsController,
+    PublicSettingsController,
   ],
   providers: [
     AdminDashboardService,

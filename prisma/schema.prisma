@@ -643,7 +643,8 @@ model BusinessSettings {
   supportEmail    String?
   businessAddress String?
   serviceArea     String?
-  logoUrl         String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  logoUrl              String?
+  landingHeroImageUrl  String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }

@@ -21,4 +21,17 @@ export class AdminSettingsService {
       update: dto,
     });
   }
+
+  async getPublic() {
+    const settings = await this.get();
+    return {
+      businessName: settings.businessName,
+      officePhone: settings.officePhone,
+      supportEmail: settings.supportEmail,
+      businessAddress: settings.businessAddress,
+      serviceArea: settings.serviceArea,
+      logoUrl: settings.logoUrl,
+      landingHeroImageUrl: settings.landingHeroImageUrl,
+    };
+  }
 }

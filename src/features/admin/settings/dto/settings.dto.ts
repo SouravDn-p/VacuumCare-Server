@@ -47,6 +47,12 @@ export class BusinessSettingsDto {
   @IsUrl({ require_protocol: true })
   @MaxLength(2000)
   logoUrl?: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsUrl({ require_protocol: true })
+  @MaxLength(2000)
+  landingHeroImageUrl?: string;
 }
 
 export class UpdateBusinessSettingsDto extends PartialType(
@@ -70,4 +76,17 @@ export class UpdateBusinessLogoDto {
   @IsUrl({ require_protocol: true })
   @MaxLength(2000)
   logoUrl!: string;
+}
+
+/** Documents the landing-hero-only upload body for Swagger. */
+export class UploadLandingHeroFormDto {
+  @ApiRequiredBinaryFile('Landing hero image uploaded to Cloudinary.')
+  hero!: unknown;
+}
+
+export class UpdateLandingHeroDto {
+  @ApiProperty({ example: 'https://cdn.example.com/hero.jpg' })
+  @IsUrl({ require_protocol: true })
+  @MaxLength(2000)
+  landingHeroImageUrl!: string;
 }
