@@ -26,9 +26,35 @@ export class AdminDashboardSummaryResponseDto {
   @ApiProperty({ example: 24 }) newServiceRequests!: number;
   @ApiProperty({ example: 8 }) quotationsAwaitingResponse!: number;
   @ApiProperty({ example: 11 }) servicesScheduledToday!: number;
+  @ApiProperty({
+    example: 4,
+    description: 'Assigned jobs the technician has marked in progress.',
+  })
+  servicesInProgress!: number;
+  @ApiProperty({
+    example: 2,
+    description: 'Technician reports waiting for office review.',
+  })
+  reportsAwaitingReview!: number;
   @ApiProperty({ example: 8420 }) monthlyServiceRevenue!: number;
   @ApiProperty({ example: 16 }) ordersAwaitingShipment!: number;
   @ApiProperty({ example: 3 }) paymentIssues!: number;
+  @ApiProperty({
+    example: 12,
+    description: 'Active technician accounts.',
+  })
+  totalTechnicians!: number;
+  @ApiProperty({
+    example: 5,
+    description: 'Technicians with a scheduled or in-progress job today.',
+  })
+  techniciansOnAssignmentToday!: number;
+  @ApiProperty({
+    example: 7,
+    description:
+      'Verified available technicians with no scheduled or in-progress job today.',
+  })
+  techniciansFreeToday!: number;
   @ApiProperty({ example: '2026-08-20' }) date!: string;
   @ApiProperty({ example: 'America/Toronto' }) timezone!: string;
   @ApiProperty({ example: '2026-08-20T04:00:00.000Z' })

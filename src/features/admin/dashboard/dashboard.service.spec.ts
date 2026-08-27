@@ -17,6 +17,7 @@ describe('AdminDashboardService', () => {
     quotation: { count: jest.fn() },
     payment: { count: jest.fn(), findMany: jest.fn() },
     order: { count: jest.fn(), findMany: jest.fn() },
+    user: { count: jest.fn(), findMany: jest.fn() },
     serviceIssue: { findMany: jest.fn() },
   };
   let service: AdminDashboardService;
@@ -26,10 +27,12 @@ describe('AdminDashboardService', () => {
     service = new AdminDashboardService(prisma as unknown as PrismaService);
   });
 
-  it('builds the six Figma summary metrics with local date boundaries', async () => {
+  it('builds dashboard summary metrics with technician visit and report counts', async () => {
     prisma.serviceRequest.count
       .mockResolvedValueOnce(24)
-      .mockResolvedValueOnce(11);
+      .mockResolvedValueOnce(11)
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(2);
     prisma.quotation.count.mockResolvedValue(8);
     prisma.payment.findMany.mockResolvedValue([
       {
@@ -42,6 +45,9 @@ describe('AdminDashboardService', () => {
     ]);
     prisma.order.count.mockResolvedValue(16);
     prisma.payment.count.mockResolvedValue(3);
+    prisma.user.count.mockResolvedValue(12);
+    prisma.user.findMany.mockResolvedValue([{ id: 'tech-1' }, { id: 'tech-2' }]);
+    prisma.serviceRequest.findMany.mockResolvedValue([{ technicianId: 'tech-1' }]);
 
     await expect(
       service.summary({
@@ -52,9 +58,14 @@ describe('AdminDashboardService', () => {
       newServiceRequests: 24,
       quotationsAwaitingResponse: 8,
       servicesScheduledToday: 11,
+      servicesInProgress: 4,
+      reportsAwaitingReview: 2,
       monthlyServiceRevenue: 8420,
       ordersAwaitingShipment: 16,
       paymentIssues: 3,
+      totalTechnicians: 12,
+      techniciansOnAssignmentToday: 1,
+      techniciansFreeToday: 1,
       date: '2026-08-20',
       timezone: 'America/Toronto',
       periodStart: '2026-08-20T04:00:00.000Z',

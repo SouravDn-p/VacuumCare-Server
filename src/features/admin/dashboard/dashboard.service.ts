@@ -5,6 +5,8 @@ import {
   PaymentStatus,
   QuoteStatus,
   RequestStatus,
+  TechnicianVerificationStatus,
+  UserRole,
 } from '../../../../generated/prisma/enums';
 import { PrismaService } from '../../../database/prisma.service';
 import {
@@ -44,9 +46,14 @@ export class AdminDashboardService {
       newServiceRequests,
       quotationsAwaitingResponse,
       servicesScheduledToday,
+      servicesInProgress,
+      reportsAwaitingReview,
       revenuePayments,
       ordersAwaitingShipment,
       paymentIssues,
+      totalTechnicians,
+      availableTechnicians,
+      busyAssignments,
     ] = await Promise.all([
       this.prisma.serviceRequest.count({
         where: { status: RequestStatus.NEW },
@@ -59,11 +66,15 @@ export class AdminDashboardService {
       }),
       this.prisma.serviceRequest.count({
         where: {
-          status: {
-            in: [RequestStatus.SCHEDULED, RequestStatus.IN_PROGRESS],
-          },
+          status: RequestStatus.SCHEDULED,
           scheduledStart: { gte: dayStart, lt: dayEnd },
         },
+      }),
+      this.prisma.serviceRequest.count({
+        where: { status: RequestStatus.IN_PROGRESS },
+      }),
+      this.prisma.serviceRequest.count({
+        where: { status: RequestStatus.REPORT_SUBMITTED },
       }),
       this.serviceRevenuePayments(monthStart, monthEnd),
       this.prisma.order.count({
@@ -72,15 +83,55 @@ export class AdminDashboardService {
       this.prisma.payment.count({
         where: { status: PaymentStatus.FAILED },
       }),
+      this.prisma.user.count({
+        where: { role: UserRole.TECHNICIAN, isActive: true },
+      }),
+      this.prisma.user.findMany({
+        where: {
+          role: UserRole.TECHNICIAN,
+          isActive: true,
+          technician: {
+            is: {
+              isAvailable: true,
+              verificationStatus: TechnicianVerificationStatus.VERIFIED,
+            },
+          },
+        },
+        select: { id: true },
+      }),
+      this.prisma.serviceRequest.findMany({
+        where: {
+          technicianId: { not: null },
+          status: {
+            in: [RequestStatus.SCHEDULED, RequestStatus.IN_PROGRESS],
+          },
+          scheduledStart: { gte: dayStart, lt: dayEnd },
+        },
+        distinct: ['technicianId'],
+        select: { technicianId: true },
+      }),
     ]);
+
+    const busyIds = new Set(
+      busyAssignments
+        .map((row) => row.technicianId)
+        .filter((id): id is string => Boolean(id)),
+    );
 
     return {
       newServiceRequests,
       quotationsAwaitingResponse,
       servicesScheduledToday,
+      servicesInProgress,
+      reportsAwaitingReview,
       monthlyServiceRevenue: this.netRevenue(revenuePayments),
       ordersAwaitingShipment,
       paymentIssues,
+      totalTechnicians,
+      techniciansOnAssignmentToday: busyIds.size,
+      techniciansFreeToday: availableTechnicians.filter(
+        (technician) => !busyIds.has(technician.id),
+      ).length,
       date: this.dateKey(date),
       timezone,
       periodStart: dayStart.toISOString(),
@@ -122,7 +173,11 @@ export class AdminDashboardService {
       where: {
         scheduledStart: { gte: dayStart, lt: dayEnd },
         status: {
-          in: [RequestStatus.SCHEDULED, RequestStatus.IN_PROGRESS],
+          in: [
+            RequestStatus.SCHEDULED,
+            RequestStatus.IN_PROGRESS,
+            RequestStatus.REPORT_SUBMITTED,
+          ],
         },
       },
       orderBy: { scheduledStart: 'asc' },

@@ -186,7 +186,10 @@ describe('Admin operations contracts', () => {
         verificationStatus: 'VERIFIED',
       },
       _count: { assignedRequests: 2 },
-      assignedRequests: [{ id: 'request-1' }],
+      assignedRequests: [
+        { id: 'request-1', status: 'REPORT_SUBMITTED' },
+        { id: 'request-2', status: 'IN_PROGRESS' },
+      ],
     });
     const service = new AdminTechniciansService(
       prisma as unknown as PrismaService,
@@ -197,6 +200,7 @@ describe('Admin operations contracts', () => {
         id: 'user-1',
         profileId: 'profile-1',
         jobsToday: 2,
+        jobsInProgress: 1,
         reportsAwaitingReview: 1,
       }),
     );

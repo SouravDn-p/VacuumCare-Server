@@ -13,7 +13,7 @@ type SafeUser = Omit<Prisma.UserGetPayload<object>, 'passwordHash'>;
 type TechnicianViewRow = SafeUser & {
   technician: Prisma.TechnicianProfileGetPayload<object> | null;
   _count: { assignedRequests: number };
-  assignedRequests: { id: string }[];
+  assignedRequests: { id: string; status: RequestStatus }[];
 };
 
 @Injectable()
@@ -56,10 +56,15 @@ export class AdminTechniciansService {
           },
           assignedRequests: {
             where: {
-              status: RequestStatus.REPORT_SUBMITTED,
-              report: { is: { customerConfirmedAt: null } },
+              OR: [
+                { status: RequestStatus.IN_PROGRESS },
+                {
+                  status: RequestStatus.REPORT_SUBMITTED,
+                  report: { is: { customerConfirmedAt: null } },
+                },
+              ],
             },
-            select: { id: true },
+            select: { id: true, status: true },
           },
         },
         orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
@@ -96,10 +101,15 @@ export class AdminTechniciansService {
         },
         assignedRequests: {
           where: {
-            status: RequestStatus.REPORT_SUBMITTED,
-            report: { is: { customerConfirmedAt: null } },
+            OR: [
+              { status: RequestStatus.IN_PROGRESS },
+              {
+                status: RequestStatus.REPORT_SUBMITTED,
+                report: { is: { customerConfirmedAt: null } },
+              },
+            ],
           },
-          select: { id: true },
+          select: { id: true, status: true },
         },
       },
     });
@@ -168,7 +178,12 @@ export class AdminTechniciansService {
       profileId: technician.id,
       rating: Number(technician.rating),
       jobsToday: _count.assignedRequests,
-      reportsAwaitingReview: assignedRequests.length,
+      jobsInProgress: assignedRequests.filter(
+        (request) => request.status === RequestStatus.IN_PROGRESS,
+      ).length,
+      reportsAwaitingReview: assignedRequests.filter(
+        (request) => request.status === RequestStatus.REPORT_SUBMITTED,
+      ).length,
     };
   }
 }

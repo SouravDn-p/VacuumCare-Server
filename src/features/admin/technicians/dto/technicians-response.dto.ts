@@ -13,6 +13,10 @@ export class AdminTechnicianItemDto extends AdminPersonSummaryDto {
   @ApiProperty({ enum: TechnicianVerificationStatus })
   verificationStatus!: TechnicianVerificationStatus;
   @ApiProperty() jobsToday!: number;
+  @ApiProperty({
+    description: 'Assigned jobs currently IN_PROGRESS for this technician.',
+  })
+  jobsInProgress!: number;
   @ApiProperty() reportsAwaitingReview!: number;
 }
 
