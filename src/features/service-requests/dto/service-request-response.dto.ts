@@ -101,25 +101,46 @@ export class InletCountResponseDto {
   @ApiProperty({ example: 3 }) quantity!: number;
 }
 
+export class EquipmentMediaResponseDto {
+  @ApiProperty({ example: 'media-id' }) id!: string;
+  @ApiProperty({ format: 'uri' }) url!: string;
+  @ApiPropertyOptional({ nullable: true }) mimeType!: string | null;
+  @ApiPropertyOptional({ nullable: true }) caption!: string | null;
+}
+
 export class EquipmentResponseDto {
   @ApiProperty({ example: 'equipment-id' }) id!: string;
+  @ApiProperty({ example: 'customer-user-id' }) customerId!: string;
+  @ApiPropertyOptional({ nullable: true }) requestId!: string | null;
   @ApiProperty({ example: 'Unit 24' }) unitNumber!: string;
   @ApiPropertyOptional({ nullable: true }) manufacturer!: string | null;
   @ApiPropertyOptional({ nullable: true }) model!: string | null;
   @ApiPropertyOptional({ nullable: true }) serialNumber!: string | null;
   @ApiPropertyOptional({ nullable: true }) location!: string | null;
   @ApiPropertyOptional({ nullable: true }) condition!: string | null;
+  @ApiProperty({ type: [String] }) additionalFeatures!: string[];
   @ApiProperty({ type: [InletCountResponseDto] })
   inlets!: InletCountResponseDto[];
+  @ApiProperty({ type: [EquipmentMediaResponseDto] })
+  media!: EquipmentMediaResponseDto[];
 }
 
 export class ServiceReportResponseDto {
   @ApiProperty({ example: 'report-id' }) id!: string;
+  @ApiProperty({ example: 'request-id' }) requestId!: string;
   @ApiProperty({ example: 'Repaired' }) repairStatus!: string;
   @ApiProperty({ example: 'Filter replaced and unit tested.' })
   workPerformed!: string;
   @ApiPropertyOptional({ nullable: true }) technicianNotes!: string | null;
+  @ApiPropertyOptional({ nullable: true }) partsUsed!: unknown;
   @ApiProperty({ example: false }) followUpRequired!: boolean;
+  @ApiPropertyOptional({ nullable: true }) followUpNotes!: string | null;
+  @ApiPropertyOptional({ nullable: true, type: String, format: 'date-time' })
+  arrivalTime!: string | null;
+  @ApiPropertyOptional({ nullable: true, type: String, format: 'date-time' })
+  departureTime!: string | null;
+  @ApiPropertyOptional({ nullable: true, type: String, format: 'date-time' })
+  customerConfirmedAt!: string | null;
   @ApiProperty({ type: String, format: 'date-time' }) submittedAt!: string;
 }
 

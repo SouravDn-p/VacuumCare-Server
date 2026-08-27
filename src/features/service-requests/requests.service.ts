@@ -24,12 +24,18 @@ import type {
   EquipmentDto,
   MediaDto,
   ReportDto,
+  UpdateEquipmentDto,
   UpdateRequestStatusDto,
 } from './dto/service-request.dto';
 
 export const MAX_REQUEST_MEDIA = 10;
 
 export const REQUEST_MEDIA_FOLDER = 'vacuumCare/service-requests';
+
+const equipmentRecordInclude = {
+  inlets: { orderBy: [{ floor: 'asc' as const }, { type: 'asc' as const }] },
+  media: { orderBy: { createdAt: 'desc' as const } },
+};
 
 const CUSTOMER_CANCELLABLE = new Set<RequestStatus>([
   RequestStatus.NEW,
@@ -70,7 +76,7 @@ export const requestDetailInclude = {
     },
   },
   report: true,
-  equipment: { include: { inlets: true } },
+  equipment: { include: { inlets: true, media: true } },
   statusHistory: { orderBy: { createdAt: 'asc' as const } },
 } as const;
 
@@ -359,6 +365,11 @@ export class RequestsService {
   ) {
     const request = await this.getAuthorized(user, id);
     this.validateMediaRole(user, request.technicianId, dto.kind);
+    if (user.role === UserRole.TECHNICIAN && !file) {
+      throw new BadRequestException(
+        'A file upload is required. Hosted URLs are not accepted for technician media.',
+      );
+    }
     if (!file && !dto.url)
       throw new BadRequestException(
         'Either a file upload or a url is required',
@@ -477,18 +488,107 @@ export class RequestsService {
       serialNumber: dto.serialNumber,
       location: dto.location,
       condition: dto.condition,
+      additionalFeatures: dto.additionalFeatures,
       inlets: dto.inlets ? { deleteMany: {}, create: dto.inlets } : undefined,
     };
     return existing
       ? this.prisma.equipment.update({
           where: { id: existing.id },
           data,
-          include: { inlets: true },
+          include: equipmentRecordInclude,
         })
       : this.prisma.equipment.create({
           data: { requestId: id, unitNumber: dto.unitNumber, ...data },
-          include: { inlets: true },
+          include: equipmentRecordInclude,
         });
+  }
+
+  async getReport(user: AuthUser, id: string) {
+    await this.requireAssignedTechnician(user, id);
+    const report = await this.prisma.serviceReport.findUnique({
+      where: { requestId: id },
+    });
+    if (!report) throw new NotFoundException('Service report not found');
+    return report;
+  }
+
+  async updateReport(user: AuthUser, id: string, dto: Partial<ReportDto>) {
+    const request = await this.requireAssignedTechnician(user, id);
+    const existing = await this.prisma.serviceReport.findUnique({
+      where: { requestId: id },
+    });
+    if (!existing) throw new NotFoundException('Service report not found');
+    if (
+      request.status !== RequestStatus.IN_PROGRESS &&
+      request.status !== RequestStatus.REPORT_SUBMITTED
+    ) {
+      throw new BadRequestException(
+        'The request must be in progress before a report is updated',
+      );
+    }
+    return this.prisma.serviceReport.update({
+      where: { requestId: id },
+      data: {
+        ...definedReportFields(dto),
+        partsUsed:
+          dto.partsUsed !== undefined
+            ? (JSON.parse(JSON.stringify(dto.partsUsed)) as Prisma.InputJsonValue)
+            : undefined,
+        arrivalTime:
+          dto.arrivalTime !== undefined
+            ? dto.arrivalTime
+              ? new Date(dto.arrivalTime)
+              : null
+            : undefined,
+        departureTime:
+          dto.departureTime !== undefined
+            ? dto.departureTime
+              ? new Date(dto.departureTime)
+              : null
+            : undefined,
+      },
+    });
+  }
+
+  async listEquipment(user: AuthUser, id: string) {
+    const request = await this.requireAssignedTechnician(user, id);
+    return this.prisma.equipment.findMany({
+      where: { customerId: request.customerId },
+      include: equipmentRecordInclude,
+      orderBy: { unitNumber: 'asc' },
+    });
+  }
+
+  async updateEquipment(
+    user: AuthUser,
+    requestId: string,
+    equipmentId: string,
+    dto: UpdateEquipmentDto,
+  ) {
+    const request = await this.requireAssignedTechnician(user, requestId);
+    const equipment = await this.prisma.equipment.findFirst({
+      where: { id: equipmentId, customerId: request.customerId },
+    });
+    if (!equipment) throw new NotFoundException('Equipment not found');
+    const { inlets, ...fields } = dto;
+    return this.prisma.equipment.update({
+      where: { id: equipmentId },
+      data: {
+        ...fields,
+        inlets: inlets ? { deleteMany: {}, create: inlets } : undefined,
+      },
+      include: equipmentRecordInclude,
+    });
+  }
+
+  private async requireAssignedTechnician(user: AuthUser, id: string) {
+    const request = await this.getAuthorized(user, id);
+    if (user.role !== UserRole.TECHNICIAN || request.technicianId !== user.id) {
+      throw new ForbiddenException(
+        'Only the assigned technician can use this action',
+      );
+    }
+    return request;
   }
 
   private validateMime(mimeType?: string) {
@@ -516,4 +616,22 @@ export class RequestsService {
       'This media type is not permitted for your role',
     );
   }
+}
+
+function definedReportFields(dto: Partial<ReportDto>) {
+  return {
+    ...(dto.repairStatus !== undefined ? { repairStatus: dto.repairStatus } : {}),
+    ...(dto.workPerformed !== undefined
+      ? { workPerformed: dto.workPerformed }
+      : {}),
+    ...(dto.technicianNotes !== undefined
+      ? { technicianNotes: dto.technicianNotes }
+      : {}),
+    ...(dto.followUpRequired !== undefined
+      ? { followUpRequired: dto.followUpRequired }
+      : {}),
+    ...(dto.followUpNotes !== undefined
+      ? { followUpNotes: dto.followUpNotes }
+      : {}),
+  };
 }

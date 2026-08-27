@@ -30,7 +30,7 @@ documented in Swagger (`/api/docs`) so the file pickers appear there.
 | `PATCH /api/users/me`                                       | `avatar`               | image          | `User.avatarUrl`               |
 | `POST /api/service-requests`                                | `images[]`, `videos[]` | image / video  | `ServiceMedia` (`ISSUE`)       |
 | `POST /api/service-requests/:id/media`                      | `file`                 | image or video | `ServiceMedia` (`ISSUE`)       |
-| `POST /api/technician/service-requests/:id/media`           | `file`                 | image or video | `ServiceMedia`                 |
+| `POST /api/technician/service-requests/:id/media`           | `file` (required)      | image or video | `ServiceMedia`                 |
 | `POST /api/admin/service-requests/:id/media`                | `file`                 | image or video | `ServiceMedia`                 |
 | `POST /api/conversations/:id/messages`                      | `images[]`, `videos[]` | image / video  | `ChatMessage.attachments`      |
 | `PATCH /api/orders/returns/:id/status`                      | `returnLabel`          | PDF or image   | `ReturnRequest.returnLabelUrl` |

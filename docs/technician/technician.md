@@ -30,29 +30,35 @@ Related docs: [authentication](../authentication.md), [OTP](../auth/otp.md),
 
 ---
 
+
+
 ## What a technician is allowed to do
 
-| Work | Technician |
-| ---- | ---------- |
-| Register and verify email | Yes — `POST /auth/technician/signup`, then OTP |
-| Sign in / reset password | Yes — same login and OTP reset as other roles |
-| See only **assigned** jobs | Yes — list is filtered by `technicianId = me` |
-| Start a scheduled visit | Yes — `SCHEDULED` → `IN_PROGRESS` |
-| Call or message the customer | Yes — Agora call + request conversation |
-| Share live location while travelling or on site | Yes — only for `SCHEDULED` / `IN_PROGRESS` jobs they own |
-| Upload before / after / equipment / inlet media | Yes |
-| Record unit and inlet counts | Yes |
-| Submit or update the service report | Yes — while `IN_PROGRESS` or `REPORT_SUBMITTED` |
-| Edit own profile, availability, notification prefs | Yes |
-| Create quotes, assign jobs, or set the appointment | **No** — admin only |
-| Cancel a customer request | **No** |
-| Capture or refund Stripe | **No** — admin after the customer confirms the report |
+
+| Work                                               | Technician                                               |
+| -------------------------------------------------- | -------------------------------------------------------- |
+| Register and verify email                          | Yes — `POST /auth/technician/signup`, then OTP           |
+| Sign in / reset password                           | Yes — same login and OTP reset as other roles            |
+| See only **assigned** jobs                         | Yes — list is filtered by `technicianId = me`            |
+| Start a scheduled visit                            | Yes — `SCHEDULED` → `IN_PROGRESS`                        |
+| Call or message the customer                       | Yes — Agora call + request conversation                  |
+| Share live location while travelling or on site    | Yes — only for `SCHEDULED` / `IN_PROGRESS` jobs they own |
+| Upload before / after / equipment / inlet media    | Yes                                                      |
+| Record unit and inlet counts                       | Yes                                                      |
+| Submit or update the service report                | Yes — while `IN_PROGRESS` or `REPORT_SUBMITTED`          |
+| Edit own profile, availability, notification prefs | Yes                                                      |
+| Create quotes, assign jobs, or set the appointment | **No** — admin only                                      |
+| Cancel a customer request                          | **No**                                                   |
+| Capture or refund Stripe                           | **No** — admin after the customer confirms the report    |
+
 
 Admin still owns: review new requests, send quotes, decide counteroffers, assign
 `POST /admin/service-requests/:id/assign`, calendar `GET /admin/schedule`, and
 payment capture.
 
 ---
+
+
 
 ## Flow at a glance
 
@@ -67,6 +73,7 @@ Prefs                 PATCH /users/me/preferences
 
 My jobs               GET  /technician/service-requests
                       GET  /technician/service-requests?status=SCHEDULED
+Home stats            GET  /technician/home-stats
 Job detail            GET  /technician/service-requests/:id
 Start job             PATCH /technician/service-requests/:id/status
                       body { "status": "IN_PROGRESS" }
@@ -92,65 +99,77 @@ Admin captures        POST /admin/payments/:id/capture          → COMPLETED
 
 ---
 
+
+
 ## Status machine the technician UI should render
 
-| Request `status` | Technician screen |
-| ---------------- | ----------------- |
-| anything before `SCHEDULED` | Hidden — not assigned yet |
-| `SCHEDULED` | Upcoming job. Actions: view details, call, directions, **Mark as in progress**, share location |
-| `IN_PROGRESS` | Open job. Upload photos, notes, equipment, **Complete service report** |
-| `REPORT_SUBMITTED` | Report is with the office. Technician may still update the report |
-| `COMPLETED` | Done — show in Completed |
-| `CANCELLED` | Do not start or report |
+
+| Request `status`            | Technician screen                                                                              |
+| --------------------------- | ---------------------------------------------------------------------------------------------- |
+| anything before `SCHEDULED` | Hidden — not assigned yet                                                                      |
+| `SCHEDULED`                 | Upcoming job. Actions: view details, call, directions, **Mark as in progress**, share location |
+| `IN_PROGRESS`               | Open job. Upload photos, notes, equipment, **Complete service report**                         |
+| `REPORT_SUBMITTED`          | Report is with the office. Technician may still update the report                              |
+| `COMPLETED`                 | Done — show in Completed                                                                       |
+| `CANCELLED`                 | Do not start or report                                                                         |
+
 
 Home KPI cards in Figma (jobs today, in progress, completed this month, average
-rating) are **not** a separate endpoint. Count them from
-`GET /technician/service-requests` plus `GET /users/me` (`technician.rating`).
+rating) come from `GET /technician/home-stats`. Pass `timezone` so today and
+this-month counts match the device.
 
 My Jobs tabs:
 
-| Tab | How to build it |
-| --- | --------------- |
-| Today | Assigned jobs whose `scheduledStart` falls on the device local day |
-| Upcoming | `SCHEDULED` (and future `IN_PROGRESS` if you want “still open”) |
-| Completed | `COMPLETED` (optionally `REPORT_SUBMITTED`) |
+
+| Tab       | How to build it                                                    |
+| --------- | ------------------------------------------------------------------ |
+| Today     | Assigned jobs whose `scheduledStart` falls on the device local day |
+| Upcoming  | `SCHEDULED` (and future `IN_PROGRESS` if you want “still open”)    |
+| Completed | `COMPLETED` (optionally `REPORT_SUBMITTED`)                        |
+
 
 `GET /technician/service-requests?status=` filters one enum value. Combine
 client-side for Today vs Upcoming.
 
 ---
 
+
+
 ## Figma screens → APIs
 
 Checked against the Technician App frames on the Figma page above.
 
-| Figma screen | Already implemented |
-| ------------ | ------------------- |
-| Login / Create account / Forgot password | `POST /auth/login`, `POST /auth/technician/signup`, password-reset OTP |
-| Home — greeting, jobs today, in progress, completed, rating, today’s job cards | `GET /users/me`, `GET /technician/service-requests` |
-| Open Job / View details | `GET /technician/service-requests/:id` |
-| Call customer | `POST /calls/service-request/:id/token` (or native `tel:` from `customer.phone`) |
-| Get directions | Client maps using `address` on the request — no maps API in this backend |
-| Mark as in progress | `PATCH /technician/service-requests/:id/status` |
-| Upload before / after photos | `POST /technician/service-requests/:id/media` `kind=BEFORE` / `AFTER` |
-| Add technician notes | `POST /technician/service-requests/:id/report` `technicianNotes` |
-| Open equipment & inlet details | `POST /technician/service-requests/:id/equipment` |
-| Complete / submit service report | `POST /technician/service-requests/:id/report` |
-| Job photos: Before, After, Equip., Inlet | media `kind` `BEFORE`, `AFTER`, `EQUIPMENT`, `INLET` |
-| My Jobs (Today / Upcoming / Completed) | list + client date/status filters |
-| Notifications / Alerts | `GET /notifications`, SSE stream |
-| Chat | `GET /conversations`, send on `/conversations/:id/messages` |
-| Profile, edit, service area, logout | `GET/PATCH /users/me`, `PATCH /users/me/technician`, `POST /auth/logout` |
-| Live tracking (customer sees ETA) | technician `POST /tracking/service-requests/:id/location` |
+
+| Figma screen                                                                   | Already implemented                                                              |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| Login / Create account / Forgot password                                       | `POST /auth/login`, `POST /auth/technician/signup`, password-reset OTP           |
+| Home — greeting, jobs today, in progress, completed, rating, today’s job cards | `GET /technician/home-stats`, `GET /technician/service-requests`                 |
+| Open Job / View details                                                        | `GET /technician/service-requests/:id`                                           |
+| Call customer                                                                  | `POST /calls/service-request/:id/token` (or native `tel:` from `customer.phone`) |
+| Get directions                                                                 | Client maps using `address` on the request — no maps API in this backend         |
+| Mark as in progress                                                            | `PATCH /technician/service-requests/:id/status`                                  |
+| Upload before / after photos                                                   | `POST /technician/service-requests/:id/media` `kind=BEFORE` / `AFTER`            |
+| Add technician notes                                                           | `POST /technician/service-requests/:id/report` `technicianNotes`                 |
+| Open equipment & inlet details                                                 | `GET/POST /technician/service-requests/:id/equipment`, `PATCH .../equipment/:equipmentId` |
+| Complete / submit service report                                               | `GET/POST/PATCH /technician/service-requests/:id/report`                         |
+| Job photos: Before, After, Equip., Inlet                                       | media `kind` `BEFORE`, `AFTER`, `EQUIPMENT`, `INLET`                             |
+| My Jobs (Today / Upcoming / Completed)                                         | list + client date/status filters                                                |
+| Notifications / Alerts                                                         | `GET /notifications`, SSE stream                                                 |
+| Chat                                                                           | `GET /conversations`, send on `/conversations/:id/messages`                      |
+| Profile, edit, service area, logout                                            | `GET/PATCH /users/me`, `PATCH /users/me/technician`, `POST /auth/logout`         |
+| Live tracking (customer sees ETA)                                              | technician `POST /tracking/service-requests/:id/location`                        |
+
 
 Client-only (no extra backend):
 
 - **Get directions** — open Apple/Google Maps from the job address.
 - **Previous visit** on the job card — not a dedicated field. Derive from earlier
-  completed requests for the same customer if the app needs it.
-- **Home KPI totals** — count on the client from the assigned-job list.
+completed requests for the same customer if the app needs it.
+- **Home KPI totals** — `GET /technician/home-stats`.
 
 ---
+
+
 
 ## 1. Register and sign in
 
@@ -187,10 +206,15 @@ call below.
 
 ---
 
+
+
 ## 2. Home and my jobs
 
 ```bash
 curl -X GET 'http://localhost:5000/api/users/me' \
+  -H 'Authorization: Bearer <technicianAccessToken>'
+
+curl -X GET 'http://localhost:5000/api/technician/home-stats?timezone=America/Toronto' \
   -H 'Authorization: Bearer <technicianAccessToken>'
 
 curl -X GET 'http://localhost:5000/api/technician/service-requests' \
@@ -209,6 +233,8 @@ window, status, media, and report when present.
 
 ---
 
+
+
 ## 3. Open a job
 
 ```bash
@@ -222,6 +248,8 @@ Use this payload for Customer Details, Service Details, and Customer-Reported
 Issue (including customer `ISSUE` media).
 
 ---
+
+
 
 ## 4. Start the visit
 
@@ -261,11 +289,13 @@ curl -X POST 'http://localhost:5000/api/calls/service-request/clxreq01/token' \
 
 ---
 
+
+
 ## 5. Media, equipment, and report
 
 Figma “Technician Actions” map 1:1 to these writes.
 
-**Photos / videos** (multipart `file` or hosted `url`):
+**Photos / videos** (multipart `file` only — Cloudinary stores the URL):
 
 ```bash
 curl -X POST 'http://localhost:5000/api/technician/service-requests/clxreq01/media' \
@@ -290,13 +320,31 @@ curl -X POST 'http://localhost:5000/api/technician/service-requests/clxreq01/equ
     "serialNumber": "SN-123456",
     "location": "Utility room",
     "condition": "Good",
+    "additionalFeatures": ["VacPan"],
     "inlets": [
       { "floor": "Basement", "type": "Standard inlet", "quantity": 3 }
     ]
   }'
 ```
 
-Same `unitNumber` on the same request updates the existing row.
+Same `unitNumber` on the same request updates the existing row. List the
+customer inventory (admin dashboard shape) and patch a unit:
+
+```bash
+curl -X GET 'http://localhost:5000/api/technician/service-requests/clxreq01/equipment' \
+  -H 'Authorization: Bearer <technicianAccessToken>'
+
+curl -X PATCH 'http://localhost:5000/api/technician/service-requests/clxreq01/equipment/clxeq01' \
+  -H 'Authorization: Bearer <technicianAccessToken>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "condition": "Fair",
+    "additionalFeatures": ["VacPan", "Wally Flex"],
+    "inlets": [
+      { "floor": "Basement", "type": "Standard inlet", "quantity": 4 }
+    ]
+  }'
+```
 
 **Service report** (Figma: work performed, parts used, technician notes, visit
 times, submit for office review):
@@ -321,10 +369,23 @@ curl -X POST 'http://localhost:5000/api/technician/service-requests/clxreq01/rep
 
 Allowed when status is `IN_PROGRESS` or `REPORT_SUBMITTED` (resubmit / edit).
 First submit moves the request to `REPORT_SUBMITTED` and notifies the customer
-and admins. The office then captures payment; the technician does not mark
-`COMPLETED`.
+and admins. Read or edit afterward:
+
+```bash
+curl -X GET 'http://localhost:5000/api/technician/service-requests/clxreq01/report' \
+  -H 'Authorization: Bearer <technicianAccessToken>'
+
+curl -X PATCH 'http://localhost:5000/api/technician/service-requests/clxreq01/report' \
+  -H 'Authorization: Bearer <technicianAccessToken>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "technicianNotes": "Customer asked to replace the first-floor inlet on the next visit."
+  }'
+```
 
 ---
+
+
 
 ## 6. Chat, alerts, and profile
 
@@ -356,6 +417,8 @@ Conversations are created when admin assigns the job. The technician lists
 threads where `technicianId` is themselves.
 
 ---
+
+
 
 ## Who does what on one request
 

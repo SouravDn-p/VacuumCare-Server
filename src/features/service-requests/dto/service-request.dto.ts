@@ -327,6 +327,63 @@ export class EquipmentDto {
   @IsString()
   condition?: string;
 
+  @ApiPropertyOptional({ type: [String], example: ['VacPan', 'Wally Flex'] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  additionalFeatures?: string[];
+
+  @ApiPropertyOptional({ type: [InletCountDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => InletCountDto)
+  inlets?: InletCountDto[];
+}
+
+export class UpdateEquipmentDto {
+  @ApiPropertyOptional({ example: 'Unit 24' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  unitNumber?: string;
+
+  @ApiPropertyOptional({ example: 'Cyclo Vac' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  manufacturer?: string;
+
+  @ApiPropertyOptional({ example: 'H725' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  model?: string;
+
+  @ApiPropertyOptional({ example: 'SN-123456' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  serialNumber?: string;
+
+  @ApiPropertyOptional({ example: 'Utility room' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  location?: string;
+
+  @ApiPropertyOptional({ example: 'Good' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  condition?: string;
+
+  @ApiPropertyOptional({ type: [String], example: ['VacPan', 'Wally Flex'] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  additionalFeatures?: string[];
+
   @ApiPropertyOptional({ type: [InletCountDto] })
   @IsOptional()
   @IsArray()
