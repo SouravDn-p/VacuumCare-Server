@@ -7,7 +7,8 @@ on:
 
 env:
   IMAGE: souravdebanth/vacuumcare-backend
-  DEPLOY_PATH: /home/ec2-user/project/backend
+  DEPLOY_PATH: /home/ubuntu/vacuumcare/backend
+  EC2_USER: ubuntu
 
 jobs:
   # ─────────────────────────────────────────────
@@ -64,7 +65,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no \
               -i key.pem \
-              ec2-user@${{ secrets.EC2_HOST }} \
+              ${{ env.EC2_USER }}@${{ secrets.EC2_HOST }} \
               "mkdir -p ${{ env.DEPLOY_PATH }}"
 
       # ── Transfer docker-compose.yaml only (.env lives on EC2) ───
@@ -73,22 +74,23 @@ jobs:
           scp -o StrictHostKeyChecking=no \
               -i key.pem \
               docker-compose.yaml \
-              ec2-user@${{ secrets.EC2_HOST }}:${{ env.DEPLOY_PATH }}/docker-compose.yaml
+              ${{ env.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ env.DEPLOY_PATH }}/docker-compose.yaml
 
       # ── Install Docker Compose v2 plugin if missing (Amazon Linux) ──
       - name: Ensure Docker & Compose v2 on EC2
         run: |
           ssh -o StrictHostKeyChecking=no \
               -i key.pem \
-              ec2-user@${{ secrets.EC2_HOST }} << 'EOF'
+              ${{ env.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
             set -e
 
-            # ── Install Docker if not present (Amazon Linux 2023) ──────────
+            # ── Install Docker if not present (Ubuntu) ──────────
             if ! command -v docker &>/dev/null; then
               echo ">>> Installing Docker"
-              sudo dnf install -y docker
+              sudo apt-get update -y
+              sudo apt-get install -y docker.io
               sudo systemctl enable --now docker
-              sudo usermod -aG docker ec2-user
+              sudo usermod -aG docker ubuntu
             fi
 
             # ── Install Docker Compose v2 plugin if not present ────────────
@@ -112,7 +114,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no \
               -i key.pem \
-              ec2-user@${{ secrets.EC2_HOST }} << 'EOF'
+              ${{ env.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
             set -e
             cd ${{ env.DEPLOY_PATH }}
 
@@ -141,7 +143,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no \
               -i key.pem \
-              ec2-user@${{ secrets.EC2_HOST }} << 'EOF'
+              ${{ env.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
             cd ${{ env.DEPLOY_PATH }}
 
             echo "=== Container status ==="

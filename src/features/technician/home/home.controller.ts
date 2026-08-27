@@ -29,7 +29,7 @@ export class TechnicianHomeController {
   @ApiOperation({
     summary: 'Get technician home KPI cards',
     description:
-      'Jobs today, in-progress count, completed this month, and average rating for the authenticated technician.',
+      'Jobs today, in progress, this week, completed this month/week, all-time completed, upcoming scheduled, and average rating.',
   })
   @ApiOkResponse({ type: TechnicianHomeStatsResponseDto })
   stats(

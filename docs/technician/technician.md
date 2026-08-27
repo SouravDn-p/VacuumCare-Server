@@ -45,6 +45,7 @@ Related docs: [authentication](../authentication.md), [OTP](../auth/otp.md),
 | Share live location while travelling or on site    | Yes — only for `SCHEDULED` / `IN_PROGRESS` jobs they own |
 | Upload before / after / equipment / inlet media    | Yes                                                      |
 | Record unit and inlet counts                       | Yes                                                      |
+| Add or update a job note                           | Yes — `{ "text" }` on the assigned request               |
 | Submit or update the service report                | Yes — while `IN_PROGRESS` or `REPORT_SUBMITTED`          |
 | Edit own profile, availability, notification prefs | Yes                                                      |
 | Create quotes, assign jobs, or set the appointment | **No** — admin only                                      |
@@ -75,6 +76,9 @@ My jobs               GET  /technician/service-requests
                       GET  /technician/service-requests?status=SCHEDULED
 Home stats            GET  /technician/home-stats
 Job detail            GET  /technician/service-requests/:id
+Job note              GET  /technician/service-requests/:id/note
+                      POST /technician/service-requests/:id/note
+                      PATCH /technician/service-requests/:id/note
 Start job             PATCH /technician/service-requests/:id/status
                       body { "status": "IN_PROGRESS" }
 Live location         POST /tracking/service-requests/:id/location
@@ -114,9 +118,10 @@ Admin captures        POST /admin/payments/:id/capture          → COMPLETED
 | `CANCELLED`                 | Do not start or report                                                                         |
 
 
-Home KPI cards in Figma (jobs today, in progress, completed this month, average
-rating) come from `GET /technician/home-stats`. Pass `timezone` so today and
-this-month counts match the device.
+Home KPI cards come from `GET /technician/home-stats`. Pass `timezone` so today,
+this-week (Monday–Sunday), and this-month counts match the device. The payload
+includes `jobsToday`, `inProgress`, `weeklyTasks`, `completedThisWeek`,
+`completedThisMonth`, `totalCompleted`, `upcoming`, and `averageRating`.
 
 My Jobs tabs:
 
@@ -143,13 +148,13 @@ Checked against the Technician App frames on the Figma page above.
 | Figma screen                                                                   | Already implemented                                                              |
 | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | Login / Create account / Forgot password                                       | `POST /auth/login`, `POST /auth/technician/signup`, password-reset OTP           |
-| Home — greeting, jobs today, in progress, completed, rating, today’s job cards | `GET /technician/home-stats`, `GET /technician/service-requests`                 |
+| Home — greeting, jobs today, in progress, weekly/completed totals, rating, today’s job cards | `GET /technician/home-stats`, `GET /technician/service-requests`                 |
 | Open Job / View details                                                        | `GET /technician/service-requests/:id`                                           |
 | Call customer                                                                  | `POST /calls/service-request/:id/token` (or native `tel:` from `customer.phone`) |
 | Get directions                                                                 | Client maps using `address` on the request — no maps API in this backend         |
 | Mark as in progress                                                            | `PATCH /technician/service-requests/:id/status`                                  |
 | Upload before / after photos                                                   | `POST /technician/service-requests/:id/media` `kind=BEFORE` / `AFTER`            |
-| Add technician notes                                                           | `POST /technician/service-requests/:id/report` `technicianNotes`                 |
+| Add technician notes                                                           | `GET/POST/PATCH /technician/service-requests/:id/note` `{ "text" }`              |
 | Open equipment & inlet details                                                 | `GET/POST /technician/service-requests/:id/equipment`, `PATCH .../equipment/:equipmentId` |
 | Complete / submit service report                                               | `GET/POST/PATCH /technician/service-requests/:id/report`                         |
 | Job photos: Before, After, Equip., Inlet                                       | media `kind` `BEFORE`, `AFTER`, `EQUIPMENT`, `INLET`                             |
@@ -216,7 +221,27 @@ curl -X GET 'http://localhost:5000/api/users/me' \
 
 curl -X GET 'http://localhost:5000/api/technician/home-stats?timezone=America/Toronto' \
   -H 'Authorization: Bearer <technicianAccessToken>'
+```
 
+Example payload:
+
+```json
+{
+  "firstName": "Marc",
+  "jobsToday": 3,
+  "inProgress": 1,
+  "completedThisMonth": 12,
+  "weeklyTasks": 8,
+  "completedThisWeek": 5,
+  "totalCompleted": 84,
+  "upcoming": 4,
+  "averageRating": 4.8,
+  "date": "2026-08-27",
+  "timezone": "America/Toronto"
+}
+```
+
+```bash
 curl -X GET 'http://localhost:5000/api/technician/service-requests' \
   -H 'Authorization: Bearer <technicianAccessToken>'
 
@@ -291,7 +316,7 @@ curl -X POST 'http://localhost:5000/api/calls/service-request/clxreq01/token' \
 
 
 
-## 5. Media, equipment, and report
+## 5. Media, equipment, notes, and report
 
 Figma “Technician Actions” map 1:1 to these writes.
 
@@ -346,8 +371,35 @@ curl -X PATCH 'http://localhost:5000/api/technician/service-requests/clxreq01/eq
   }'
 ```
 
-**Service report** (Figma: work performed, parts used, technician notes, visit
-times, submit for office review):
+**Job note** (one free-text note per assigned request; not the service report):
+
+```bash
+curl -X POST 'http://localhost:5000/api/technician/service-requests/clxreq01/note' \
+  -H 'Authorization: Bearer <technicianAccessToken>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "Customer asked to check the garage inlet on the next visit."
+  }'
+```
+
+```bash
+curl -X GET 'http://localhost:5000/api/technician/service-requests/clxreq01/note' \
+  -H 'Authorization: Bearer <technicianAccessToken>'
+
+curl -X PATCH 'http://localhost:5000/api/technician/service-requests/clxreq01/note' \
+  -H 'Authorization: Bearer <technicianAccessToken>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "Garage inlet is noisy; recommend replacement."
+  }'
+```
+
+`POST` returns `409` if a note already exists. `GET` / `PATCH` return `404` until
+one has been added. Report `technicianNotes` is still a separate field on the
+service report.
+
+**Service report** (Figma: work performed, parts used, visit times, submit for
+office review):
 
 ```bash
 curl -X POST 'http://localhost:5000/api/technician/service-requests/clxreq01/report' \
@@ -425,7 +477,7 @@ threads where `technicianId` is themselves.
 ```text
 Customer          submit request → accept quote → authorize card → confirm report
 Admin             review → quote → assign technician + time → capture payment
-Technician        start job → photos / equipment / notes → submit report
+Technician        start job → photos / equipment / job note → submit report
 ```
 
 The technician never sets `scheduledStart`. A time change is an admin re-assign.

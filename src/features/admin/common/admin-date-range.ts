@@ -48,6 +48,17 @@ export function adminPreviousUtcRange(
   };
 }
 
+export function adminLocalWeekRange(date: string, timezone?: string) {
+  const parsed = parseDate(date);
+  const weekday = new Date(
+    Date.UTC(parsed.year, parsed.month - 1, parsed.day),
+  ).getUTCDay();
+  const offsetToMonday = weekday === 0 ? -6 : 1 - weekday;
+  const monday = addDays(parsed, offsetToMonday);
+  const sunday = addDays(monday, 6);
+  return adminUtcRange(formatDate(monday), formatDate(sunday), timezone);
+}
+
 export function adminLocalTodayRange(timezone?: string) {
   const tz = timezone ?? 'UTC';
   try {

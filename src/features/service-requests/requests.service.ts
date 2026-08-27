@@ -581,6 +581,42 @@ export class RequestsService {
     });
   }
 
+  async getNote(user: AuthUser, id: string) {
+    await this.requireAssignedTechnician(user, id);
+    const note = await this.prisma.serviceRequestNote.findUnique({
+      where: { requestId: id },
+    });
+    if (!note) throw new NotFoundException('Note not found');
+    return note;
+  }
+
+  async addNote(user: AuthUser, id: string, text: string) {
+    await this.requireAssignedTechnician(user, id);
+    const existing = await this.prisma.serviceRequestNote.findUnique({
+      where: { requestId: id },
+    });
+    if (existing) {
+      throw new ConflictException(
+        'A note already exists for this service request',
+      );
+    }
+    return this.prisma.serviceRequestNote.create({
+      data: { requestId: id, text },
+    });
+  }
+
+  async updateNote(user: AuthUser, id: string, text: string) {
+    await this.requireAssignedTechnician(user, id);
+    const existing = await this.prisma.serviceRequestNote.findUnique({
+      where: { requestId: id },
+    });
+    if (!existing) throw new NotFoundException('Note not found');
+    return this.prisma.serviceRequestNote.update({
+      where: { requestId: id },
+      data: { text },
+    });
+  }
+
   private async requireAssignedTechnician(user: AuthUser, id: string) {
     const request = await this.getAuthorized(user, id);
     if (user.role !== UserRole.TECHNICIAN || request.technicianId !== user.id) {

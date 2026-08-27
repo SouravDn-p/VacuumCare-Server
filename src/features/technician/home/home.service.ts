@@ -4,6 +4,7 @@ import type { AuthUser } from '../../../common/auth/auth.types';
 import { PrismaService } from '../../../database/prisma.service';
 import {
   adminLocalTodayRange,
+  adminLocalWeekRange,
   adminUtcRange,
 } from '../../admin/common/admin-date-range';
 import type { TechnicianHomeStatsQueryDto } from '../dto/technician.dto';
@@ -23,51 +24,96 @@ export class TechnicianHomeService {
       `${year}-${pad(month)}-${pad(lastDay)}`,
       today.timezone,
     );
+    const weekRange = adminLocalWeekRange(date, today.timezone);
 
-    const [profile, jobsToday, inProgress, completedThisMonth] =
-      await Promise.all([
-        this.prisma.user.findUnique({
-          where: { id: user.id },
-          select: {
-            firstName: true,
-            technician: { select: { rating: true } },
+    const [
+      profile,
+      jobsToday,
+      inProgress,
+      completedThisMonth,
+      weeklyTasks,
+      completedThisWeek,
+      totalCompleted,
+      upcoming,
+    ] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: user.id },
+        select: {
+          firstName: true,
+          technician: { select: { rating: true } },
+        },
+      }),
+      this.prisma.serviceRequest.count({
+        where: {
+          technicianId: user.id,
+          status: {
+            in: [RequestStatus.SCHEDULED, RequestStatus.IN_PROGRESS],
           },
-        }),
-        this.prisma.serviceRequest.count({
-          where: {
-            technicianId: user.id,
-            status: {
-              in: [RequestStatus.SCHEDULED, RequestStatus.IN_PROGRESS],
+          scheduledStart: { gte: today.start, lt: today.end },
+        },
+      }),
+      this.prisma.serviceRequest.count({
+        where: {
+          technicianId: user.id,
+          status: RequestStatus.IN_PROGRESS,
+        },
+      }),
+      this.prisma.serviceRequest.count({
+        where: {
+          technicianId: user.id,
+          status: RequestStatus.COMPLETED,
+          OR: [
+            { completedAt: { gte: monthRange.start, lt: monthRange.end } },
+            {
+              completedAt: null,
+              scheduledStart: { gte: monthRange.start, lt: monthRange.end },
             },
-            scheduledStart: { gte: today.start, lt: today.end },
-          },
-        }),
-        this.prisma.serviceRequest.count({
-          where: {
-            technicianId: user.id,
-            status: RequestStatus.IN_PROGRESS,
-          },
-        }),
-        this.prisma.serviceRequest.count({
-          where: {
-            technicianId: user.id,
-            status: RequestStatus.COMPLETED,
-            OR: [
-              { completedAt: { gte: monthRange.start, lt: monthRange.end } },
-              {
-                completedAt: null,
-                scheduledStart: { gte: monthRange.start, lt: monthRange.end },
-              },
-            ],
-          },
-        }),
-      ]);
+          ],
+        },
+      }),
+      this.prisma.serviceRequest.count({
+        where: {
+          technicianId: user.id,
+          status: { not: RequestStatus.CANCELLED },
+          scheduledStart: { gte: weekRange.start, lt: weekRange.end },
+        },
+      }),
+      this.prisma.serviceRequest.count({
+        where: {
+          technicianId: user.id,
+          status: RequestStatus.COMPLETED,
+          OR: [
+            { completedAt: { gte: weekRange.start, lt: weekRange.end } },
+            {
+              completedAt: null,
+              scheduledStart: { gte: weekRange.start, lt: weekRange.end },
+            },
+          ],
+        },
+      }),
+      this.prisma.serviceRequest.count({
+        where: {
+          technicianId: user.id,
+          status: RequestStatus.COMPLETED,
+        },
+      }),
+      this.prisma.serviceRequest.count({
+        where: {
+          technicianId: user.id,
+          status: RequestStatus.SCHEDULED,
+        },
+      }),
+    ]);
 
     return {
       firstName: profile?.firstName ?? '',
       jobsToday,
       inProgress,
       completedThisMonth,
+      weeklyTasks,
+      completedThisWeek,
+      totalCompleted,
+      upcoming,
       averageRating: Number(profile?.technician?.rating ?? 0),
       date,
       timezone: today.timezone,

@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { MediaKind } from '../../../../generated/prisma/enums';
@@ -29,7 +30,8 @@ export class TechnicianHomeStatsQueryDto {
   @ApiPropertyOptional({
     example: 'America/Toronto',
     default: 'UTC',
-    description: 'IANA timezone used for today and this-month boundaries.',
+    description:
+      'IANA timezone used for today, this-week, and this-month boundaries.',
   })
   @IsOptional()
   @IsString()
@@ -70,6 +72,17 @@ export class TechnicianMediaFormDto extends TechnicianMediaDto {
     'Image or video file. Uploaded to Cloudinary; a URL is not accepted.',
   )
   file!: unknown;
+}
+
+export class TechnicianNoteDto {
+  @ApiProperty({
+    example: 'Customer asked to check the garage inlet on the next visit.',
+    maxLength: 5000,
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(5000)
+  text!: string;
 }
 
 export class TechnicianUpdateReportDto extends PartialType(ReportDto) {}

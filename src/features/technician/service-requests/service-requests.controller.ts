@@ -16,9 +16,11 @@ import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiBody,
+  ApiConflictResponse,
   ApiConsumes,
   ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
@@ -39,9 +41,11 @@ import {
   ServiceRequestResponseDto,
 } from '../../service-requests/dto/service-request-response.dto';
 import { RequestsService } from '../../service-requests/requests.service';
+import { TechnicianNoteResponseDto } from '../dto/technician-response.dto';
 import {
   TechnicianMediaDto,
   TechnicianMediaFormDto,
+  TechnicianNoteDto,
   TechnicianUpdateReportDto,
   TechnicianUpdateStatusDto,
   UpdateEquipmentDto,
@@ -91,6 +95,19 @@ export class TechnicianServiceRequestsController {
   @ApiOkResponse({ type: EquipmentResponseDto, isArray: true })
   listEquipment(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.requests.listEquipment(user, id);
+  }
+
+  @Get(':id/note')
+  @ApiOperation({
+    summary: 'Get the technician note on an assigned job',
+    description:
+      'One free-text note per service request. Separate from the service report.',
+  })
+  @ApiParam({ name: 'id', description: 'Service request ID' })
+  @ApiOkResponse({ type: TechnicianNoteResponseDto })
+  @ApiNotFoundResponse({ type: ApiErrorResponseDto })
+  getNote(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.requests.getNote(user, id);
   }
 
   @Get(':id')
@@ -151,6 +168,42 @@ export class TechnicianServiceRequestsController {
     @Body() dto: TechnicianUpdateReportDto,
   ) {
     return this.requests.updateReport(user, id, dto);
+  }
+
+  @Post(':id/note')
+  @ApiOperation({
+    summary: 'Add a technician note on an assigned job',
+    description:
+      'Body is `{ "text": "..." }` only. Fails with 409 if a note already exists — use PATCH to change it.',
+  })
+  @ApiParam({ name: 'id', description: 'Service request ID' })
+  @ApiCreatedResponse({ type: TechnicianNoteResponseDto })
+  @ApiConflictResponse({ type: ApiErrorResponseDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  addNote(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: TechnicianNoteDto,
+  ) {
+    return this.requests.addNote(user, id, dto.text);
+  }
+
+  @Patch(':id/note')
+  @ApiOperation({
+    summary: 'Update the technician note on an assigned job',
+    description:
+      'Body is `{ "text": "..." }` only. Fails with 404 if no note has been added yet.',
+  })
+  @ApiParam({ name: 'id', description: 'Service request ID' })
+  @ApiOkResponse({ type: TechnicianNoteResponseDto })
+  @ApiNotFoundResponse({ type: ApiErrorResponseDto })
+  @ApiBadRequestResponse({ type: ApiErrorResponseDto })
+  updateNote(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: TechnicianNoteDto,
+  ) {
+    return this.requests.updateNote(user, id, dto.text);
   }
 
   @Post(':id/equipment')

@@ -256,6 +256,7 @@ model ServiceRequest {
   media               ServiceMedia[]
   quotation           Quotation?
   report              ServiceReport?
+  note                ServiceRequestNote?
   equipment           Equipment[]
   calls               CallSession[]
   statusHistory       ServiceRequestStatusHistory[]
@@ -264,6 +265,15 @@ model ServiceRequest {
 
   @@index([customerId, status])
   @@index([technicianId, status])
+}
+
+model ServiceRequestNote {
+  id        String         @id @default(cuid())
+  requestId String         @unique
+  text      String
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  request   ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
 }
 
 model ServiceRequestStatusHistory {

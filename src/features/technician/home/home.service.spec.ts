@@ -25,7 +25,11 @@ describe('TechnicianHomeService', () => {
     prisma.serviceRequest.count
       .mockResolvedValueOnce(3)
       .mockResolvedValueOnce(1)
-      .mockResolvedValueOnce(12);
+      .mockResolvedValueOnce(12)
+      .mockResolvedValueOnce(8)
+      .mockResolvedValueOnce(5)
+      .mockResolvedValueOnce(84)
+      .mockResolvedValueOnce(4);
   });
 
   it('returns Figma home KPI counts for the authenticated technician', async () => {
@@ -36,6 +40,10 @@ describe('TechnicianHomeService', () => {
       jobsToday: 3,
       inProgress: 1,
       completedThisMonth: 12,
+      weeklyTasks: 8,
+      completedThisWeek: 5,
+      totalCompleted: 84,
+      upcoming: 4,
       averageRating: 4.8,
       timezone: 'UTC',
     });
@@ -43,6 +51,18 @@ describe('TechnicianHomeService', () => {
       where: {
         technicianId: 'tech-1',
         status: RequestStatus.IN_PROGRESS,
+      },
+    });
+    expect(prisma.serviceRequest.count).toHaveBeenNthCalledWith(6, {
+      where: {
+        technicianId: 'tech-1',
+        status: RequestStatus.COMPLETED,
+      },
+    });
+    expect(prisma.serviceRequest.count).toHaveBeenNthCalledWith(7, {
+      where: {
+        technicianId: 'tech-1',
+        status: RequestStatus.SCHEDULED,
       },
     });
   });
