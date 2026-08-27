@@ -1,10 +1,14 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import type { SubmitContactDto } from './dto/contact.dto';
 
 @Injectable()
 export class ContactService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async submit(dto: SubmitContactDto) {
     const apiKey = process.env.BREVO_API_KEY;
@@ -59,6 +63,16 @@ export class ContactService {
         `Contact email could not be sent${body ? `: ${body}` : ''}`,
       );
     }
+
+    await this.notifications.fanOutToActiveAdmins({
+      title: 'New support request',
+      body: `${dto.fullName} submitted a ${dto.service || 'general'} inquiry`,
+      data: {
+        source: 'contact',
+        email: dto.email,
+        service: dto.service ?? null,
+      },
+    });
 
     return { success: true };
   }
