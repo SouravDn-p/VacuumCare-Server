@@ -28,6 +28,22 @@ Related docs: [authentication](../authentication.md), [OTP](../auth/otp.md),
 [customer service requests](../service/customer-service-requests-flow.md),
 [schedule](../schedule/schedule.md).
 
+Technician job writes are split into Nest modules. HTTP paths are unchanged.
+
+```text
+src/features/technician/
+  home/                         GET  /technician/home-stats
+  service-requests/             GET  /technician/service-requests
+                                GET  /technician/service-requests/:id
+                                PATCH /technician/service-requests/:id/status
+    note/                       GET/POST/PATCH /technician/service-requests/:id/note
+    report/                     GET/POST/PATCH /technician/service-requests/:id/report
+    equipment/                  GET/POST /technician/service-requests/:id/equipment
+                                PATCH /technician/service-requests/:id/equipment/:equipmentId
+    media/                      POST /technician/service-requests/:id/media
+```
+
+---
 ---
 
 

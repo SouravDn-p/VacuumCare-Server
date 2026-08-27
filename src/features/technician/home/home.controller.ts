@@ -11,8 +11,8 @@ import type { AuthUser } from '../../../common/auth/auth.types';
 import { CurrentUser } from '../../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../../common/auth/jwt-auth.guard';
 import { ApiErrorResponseDto } from '../../../common/dto/api-response.dto';
-import { TechnicianHomeStatsResponseDto } from '../dto/technician-response.dto';
-import { TechnicianHomeStatsQueryDto } from '../dto/technician.dto';
+import { TechnicianHomeStatsResponseDto } from './dto/home-response.dto';
+import { TechnicianHomeStatsQueryDto } from './dto/home.dto';
 import { TechnicianGuard } from '../technician.guard';
 import { TechnicianHomeService } from './home.service';
 

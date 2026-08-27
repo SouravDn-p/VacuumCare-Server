@@ -7,7 +7,7 @@ import {
   adminLocalWeekRange,
   adminUtcRange,
 } from '../../admin/common/admin-date-range';
-import type { TechnicianHomeStatsQueryDto } from '../dto/technician.dto';
+import type { TechnicianHomeStatsQueryDto } from './dto/home.dto';
 
 @Injectable()
 export class TechnicianHomeService {

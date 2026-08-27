@@ -1,13 +1,8 @@
 import { Module } from '@nestjs/common';
-import { ServiceRequestsModule } from '../service-requests/service-requests.module';
-import { TechnicianHomeController } from './home/home.controller';
-import { TechnicianHomeService } from './home/home.service';
-import { TechnicianServiceRequestsController } from './service-requests/service-requests.controller';
-import { TechnicianGuard } from './technician.guard';
+import { TechnicianHomeModule } from './home/home.module';
+import { TechnicianServiceRequestsModule } from './service-requests/service-requests.module';
 
 @Module({
-  imports: [ServiceRequestsModule],
-  controllers: [TechnicianHomeController, TechnicianServiceRequestsController],
-  providers: [TechnicianGuard, TechnicianHomeService],
+  imports: [TechnicianHomeModule, TechnicianServiceRequestsModule],
 })
 export class TechnicianModule {}
