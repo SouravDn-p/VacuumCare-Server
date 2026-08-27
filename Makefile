@@ -1,8 +1,3 @@
-startproject:
-	@docker run --rm -v ${PWD}:/app -w /app python:3.13-slim sh -c "pip install Django && django-admin startproject crossc1 ."
-
-
-
 ps:
 	@docker ps
 
@@ -42,10 +37,10 @@ up:
 	@docker compose up -d
 
 restart:
-	@docker restart crossc1_web_server
+	@docker restart vacuumcare
 
 bash:
-	@docker exec -it crossc1_web_server bash
+	@docker exec -it vacuumcare bash
 
 images:
 	@docker images
