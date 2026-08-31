@@ -79,13 +79,28 @@ export class AdminQuotationsService {
       ...result,
       items: result.items.map(({ request, counteroffers, ...quote }) => ({
         ...quote,
+        ...(quote.totalAmount != null
+          ? { totalAmount: Number(quote.totalAmount) }
+          : {}),
+        ...(quote.negotiatedTotal != null
+          ? { negotiatedTotal: Number(quote.negotiatedTotal) }
+          : {}),
         request: {
           id: request.id,
           requestNumber: request.requestNumber,
           status: request.status,
         },
         customer: request.customer,
-        pendingNegotiation: counteroffers[0] ?? null,
+        pendingNegotiation: counteroffers[0]
+          ? {
+              ...counteroffers[0],
+              ...(counteroffers[0].requestedTotal != null
+                ? {
+                    requestedTotal: Number(counteroffers[0].requestedTotal),
+                  }
+                : {}),
+            }
+          : null,
       })),
     };
   }

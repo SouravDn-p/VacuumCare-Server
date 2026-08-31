@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '../../../../generated/prisma/client';
+import { QuoteCounterofferStatus } from '../../../../generated/prisma/enums';
 import { PrismaService } from '../../../database/prisma.service';
 import { adminUtcRange } from '../common/admin-date-range';
 import {
@@ -47,7 +48,7 @@ export class AdminServiceRequestsService {
       const range = adminUtcRange(query.from, query.to, query.timezone);
       where.createdAt = { gte: range.start, lt: range.end };
     }
-    return adminPage(
+    const result = await adminPage(
       this.prisma,
       this.prisma.serviceRequest.findMany({
         where,
@@ -62,6 +63,25 @@ export class AdminServiceRequestsService {
           issue: { select: { id: true, name: true } },
           scheduledStart: true,
           createdAt: true,
+          quotation: {
+            select: {
+              id: true,
+              totalAmount: true,
+              negotiatedTotal: true,
+              counteroffers: {
+                where: { status: QuoteCounterofferStatus.PENDING },
+                orderBy: { createdAt: 'desc' },
+                take: 1,
+                select: {
+                  id: true,
+                  requestedTotal: true,
+                  note: true,
+                  status: true,
+                  createdAt: true,
+                },
+              },
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip: adminSkip(query),
@@ -70,5 +90,29 @@ export class AdminServiceRequestsService {
       this.prisma.serviceRequest.count({ where }),
       query,
     );
+    return {
+      ...result,
+      items: result.items.map(({ quotation, ...request }) => ({
+        ...request,
+        quotation: quotation
+          ? {
+              id: quotation.id,
+              totalAmount: Number(quotation.totalAmount),
+              negotiatedTotal:
+                quotation.negotiatedTotal == null
+                  ? null
+                  : Number(quotation.negotiatedTotal),
+              pendingNegotiation: quotation.counteroffers[0]
+                ? {
+                    ...quotation.counteroffers[0],
+                    requestedTotal: Number(
+                      quotation.counteroffers[0].requestedTotal,
+                    ),
+                  }
+                : null,
+            }
+          : null,
+      })),
+    };
   }
 }

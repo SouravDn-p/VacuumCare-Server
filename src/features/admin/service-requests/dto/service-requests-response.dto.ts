@@ -5,6 +5,15 @@ import {
   AdminNamedEntityDto,
   AdminPersonSummaryDto,
 } from '../../common/dto/person-summary.dto';
+import { AdminNegotiationSummaryDto } from '../../quotations/dto/quotations-response.dto';
+
+export class AdminServiceRequestQuotationDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() totalAmount!: number;
+  @ApiPropertyOptional({ nullable: true }) negotiatedTotal!: number | null;
+  @ApiPropertyOptional({ type: AdminNegotiationSummaryDto, nullable: true })
+  pendingNegotiation!: AdminNegotiationSummaryDto | null;
+}
 
 export class AdminServiceRequestItemDto {
   @ApiProperty() id!: string;
@@ -22,6 +31,8 @@ export class AdminServiceRequestItemDto {
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
   scheduledStart!: Date | null;
   @ApiProperty({ type: String, format: 'date-time' }) createdAt!: Date;
+  @ApiPropertyOptional({ type: AdminServiceRequestQuotationDto, nullable: true })
+  quotation!: AdminServiceRequestQuotationDto | null;
 }
 
 export class AdminServiceRequestPageDto extends PaginatedResponseDto<AdminServiceRequestItemDto> {
