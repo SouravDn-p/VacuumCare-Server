@@ -30,6 +30,9 @@ describe('Admin operations contracts', () => {
       findMany: jest.fn(),
       count: jest.fn(),
     },
+    technicianProfile: {
+      update: jest.fn(),
+    },
     equipment: {
       create: jest.fn(),
       findFirst: jest.fn(),
@@ -193,6 +196,7 @@ describe('Admin operations contracts', () => {
     });
     const service = new AdminTechniciansService(
       prisma as unknown as PrismaService,
+      { createForUser: jest.fn() } as never,
     );
 
     await expect(service.get('user-1', 'UTC')).resolves.toEqual(
@@ -221,5 +225,50 @@ describe('Admin operations contracts', () => {
     } as unknown as ExecutionContext;
 
     expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+  });
+
+  it('approves a pending technician and notifies them', async () => {
+    const technicianRow = {
+      id: 'user-1',
+      firstName: 'Riley',
+      lastName: 'Chen',
+      email: 'tech@example.com',
+      phone: null,
+      isActive: true,
+      technician: {
+        id: 'profile-1',
+        serviceArea: 'Toronto',
+        skills: [],
+        rating: 4.5,
+        isAvailable: true,
+        verificationStatus: 'VERIFIED',
+      },
+      _count: { assignedRequests: 0 },
+      assignedRequests: [],
+    };
+    prisma.user.findFirst
+      .mockResolvedValueOnce({ id: 'user-1' })
+      .mockResolvedValueOnce(technicianRow);
+    prisma.technicianProfile.update.mockResolvedValue({});
+    const notifications = { createForUser: jest.fn().mockResolvedValue({}) };
+    const service = new AdminTechniciansService(
+      prisma as unknown as PrismaService,
+      notifications as never,
+    );
+
+    await expect(
+      service.verify('user-1', { status: 'VERIFIED' as never }),
+    ).resolves.toEqual(expect.objectContaining({ id: 'user-1' }));
+
+    expect(prisma.technicianProfile.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: 'user-1' },
+        data: expect.objectContaining({ verificationStatus: 'VERIFIED' }),
+      }),
+    );
+    expect(notifications.createForUser).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({ title: 'Technician account approved' }),
+    );
   });
 });

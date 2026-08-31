@@ -23,6 +23,7 @@ import { AdminGuard } from '../admin.guard';
 import {
   AdminTechnicianQueryDto,
   AdminUpdateTechnicianDto,
+  AdminVerifyTechnicianDto,
 } from './dto/technicians.dto';
 import {
   AdminTechnicianDetailDto,
@@ -43,7 +44,7 @@ export class AdminTechniciansController {
   @ApiOperation({
     summary: 'List technicians with daily jobs and report-review workload',
     description:
-      'Technician verification remains on PATCH /users/admin/technicians/:id/verification.',
+      'Filter with verificationStatus=PENDING_VERIFICATION to review signups awaiting approval. Approve or reject with PATCH /admin/technicians/:id/verification.',
   })
   @ApiOkResponse({ type: AdminTechnicianPageDto })
   list(@Query() query: AdminTechnicianQueryDto) {
@@ -57,6 +58,17 @@ export class AdminTechniciansController {
   @ApiNotFoundResponse({ type: ApiErrorResponseDto })
   get(@Param('id') id: string, @Query() query: AdminTechnicianQueryDto) {
     return this.technicians.get(id, query.timezone);
+  }
+
+  @Patch(':id/verification')
+  @ApiOperation({
+    summary: 'Approve or reject a technician registration',
+  })
+  @ApiParam({ name: 'id', description: 'Technician user ID' })
+  @ApiOkResponse({ type: AdminTechnicianDetailDto })
+  @ApiNotFoundResponse({ type: ApiErrorResponseDto })
+  verify(@Param('id') id: string, @Body() dto: AdminVerifyTechnicianDto) {
+    return this.technicians.verify(id, dto);
   }
 
   @Patch(':id')

@@ -1,4 +1,8 @@
-import { ApiPropertyOptional, IntersectionType } from '@nestjs/swagger';
+import {
+  ApiProperty,
+  ApiPropertyOptional,
+  IntersectionType,
+} from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
@@ -107,4 +111,20 @@ export class AdminUpdateTechnicianDto {
   @IsOptional()
   @IsBoolean()
   isAvailable?: boolean;
+}
+
+export class AdminVerifyTechnicianDto {
+  @ApiProperty({
+    enum: TechnicianVerificationStatus,
+    enumName: 'TechnicianVerificationStatus',
+    example: TechnicianVerificationStatus.VERIFIED,
+  })
+  @IsEnum(TechnicianVerificationStatus)
+  status!: TechnicianVerificationStatus;
+
+  @ApiPropertyOptional({ example: 'Licence document verified.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  verificationNotes?: string;
 }

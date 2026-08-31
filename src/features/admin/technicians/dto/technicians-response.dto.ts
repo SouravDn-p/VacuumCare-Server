@@ -12,6 +12,7 @@ export class AdminTechnicianItemDto extends AdminPersonSummaryDto {
   @ApiProperty() isAvailable!: boolean;
   @ApiProperty({ enum: TechnicianVerificationStatus })
   verificationStatus!: TechnicianVerificationStatus;
+  @ApiProperty() isActive!: boolean;
   @ApiProperty() jobsToday!: number;
   @ApiProperty({
     description: 'Assigned jobs currently IN_PROGRESS for this technician.',
@@ -32,6 +33,5 @@ export class AdminTechnicianDetailDto extends AdminTechnicianItemDto {
   @ApiPropertyOptional({ nullable: true }) verificationNotes!: string | null;
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
   verifiedAt!: Date | null;
-  @ApiProperty() isActive!: boolean;
   @ApiProperty({ type: String, format: 'date-time' }) createdAt!: Date;
 }
