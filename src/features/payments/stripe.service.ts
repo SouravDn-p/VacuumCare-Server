@@ -769,6 +769,26 @@ export class StripeService {
   }
 
   /**
+   * Order list/detail must not wait on the webhook. If Checkout already
+   * collected payment, mark the order paid before returning it.
+   */
+  async syncPendingOrderPayment(orderId: string): Promise<boolean> {
+    const payment = await this.prisma.payment.findFirst({
+      where: {
+        orderId,
+        purpose: PaymentPurpose.ORDER,
+        status: {
+          in: [PaymentStatus.PENDING, PaymentStatus.PROCESSING],
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (!payment) return false;
+    const reconciled = await this.reconcileOpenCheckoutPayment(payment);
+    return Boolean(reconciled);
+  }
+
+  /**
    * Success-page polling must not depend on the webhook arriving first.
    * If Checkout already finished, apply the same completion path here.
    */

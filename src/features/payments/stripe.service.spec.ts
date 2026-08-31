@@ -324,4 +324,39 @@ describe('StripeService service authorization totals', () => {
     );
     expect(tx.order.update).not.toHaveBeenCalled();
   });
+
+  it('syncs a pending shop order when Checkout already collected payment', async () => {
+    prisma.payment.findFirst.mockResolvedValue({
+      id: 'payment-1',
+      purpose: PaymentPurpose.ORDER,
+      status: PaymentStatus.PROCESSING,
+      stripeCheckoutSessionId: 'cs_test_1',
+    });
+    sessions.retrieve.mockResolvedValue({
+      id: 'cs_test_1',
+      payment_status: 'paid',
+    });
+    const completeOrderPayment = jest
+      .spyOn(
+        service as unknown as {
+          completeOrderPayment: (session: unknown) => Promise<void>;
+        },
+        'completeOrderPayment',
+      )
+      .mockResolvedValue(undefined);
+    prisma.payment.findUnique.mockResolvedValue({
+      id: 'payment-1',
+      status: PaymentStatus.SUCCEEDED,
+    });
+
+    await expect(service.syncPendingOrderPayment('order-1')).resolves.toBe(
+      true,
+    );
+
+    expect(sessions.retrieve).toHaveBeenCalledWith(
+      'cs_test_1',
+      expect.objectContaining({ expand: ['payment_intent'] }),
+    );
+    expect(completeOrderPayment).toHaveBeenCalled();
+  });
 });

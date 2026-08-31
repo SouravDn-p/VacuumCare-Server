@@ -129,7 +129,7 @@ export class OrdersController {
         },
       ];
     }
-    const [orders, total] = await this.prisma.$transaction([
+    let [orders, total] = await this.prisma.$transaction([
       this.prisma.order.findMany({
         where,
         include: orderDetailInclude,
@@ -139,6 +139,7 @@ export class OrdersController {
       }),
       this.prisma.order.count({ where }),
     ]);
+    orders = await this.syncPendingOrders(orders);
     return {
       items: orders.map((order) => mapCustomerOrder(order)),
       total,
@@ -180,6 +181,9 @@ export class OrdersController {
   @ApiUnauthorizedResponse({ type: ApiErrorResponseDto })
   async one(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const order = await this.authorizedOrder(user, id);
+    if (order.status === OrderStatus.PAYMENT_PENDING) {
+      await this.stripe.syncPendingOrderPayment(order.id);
+    }
     const detail = await this.prisma.order.findUniqueOrThrow({
       where: { id: order.id },
       include: orderDetailInclude,
@@ -441,6 +445,29 @@ export class OrdersController {
       where: { id },
       data: { ...dto, returnLabelUrl },
     });
+  }
+
+  private async syncPendingOrders<
+    T extends { id: string; status: OrderStatus },
+  >(orders: T[]): Promise<T[]> {
+    const pendingIds = orders
+      .filter((order) => order.status === OrderStatus.PAYMENT_PENDING)
+      .map((order) => order.id);
+    if (!pendingIds.length) return orders;
+    const syncedIds = (
+      await Promise.all(
+        pendingIds.map(async (id) =>
+          (await this.stripe.syncPendingOrderPayment(id)) ? id : null,
+        ),
+      )
+    ).filter((id): id is string => Boolean(id));
+    if (!syncedIds.length) return orders;
+    const refreshed = await this.prisma.order.findMany({
+      where: { id: { in: syncedIds } },
+      include: orderDetailInclude,
+    });
+    const byId = new Map(refreshed.map((order) => [order.id, order]));
+    return orders.map((order) => byId.get(order.id) ?? order) as T[];
   }
 
   private async authorizedOrder(user: AuthUser, idOrNumber: string) {

@@ -154,4 +154,138 @@ describe('OrdersController customer My Orders', () => {
       }),
     );
   });
+
+  it('flips a pending order to paid on GET after Stripe has collected payment', async () => {
+    prisma.order.findFirst.mockResolvedValue({
+      id: 'order-1',
+      customerId: 'customer-1',
+      status: OrderStatus.PAYMENT_PENDING,
+      returnRequests: [],
+    });
+    prisma.order.findUniqueOrThrow.mockResolvedValue({
+      id: 'order-1',
+      orderNumber: 'CC-90422',
+      status: OrderStatus.PAID,
+      subtotal: 299,
+      tax: 10.5,
+      total: 324.5,
+      paidAt: new Date('2026-04-24T13:45:00.000Z'),
+      createdAt: new Date('2026-04-24T13:12:00.000Z'),
+      shippingAddress: {
+        line1: '128 Pristine Way',
+        city: 'Clean Valley',
+        state: 'CA',
+        zipCode: '90210',
+      },
+      items: [],
+      statusHistory: [],
+      returnRequests: [],
+      payments: [{ status: PaymentStatus.SUCCEEDED }],
+    });
+    const stripe = {
+      syncPendingOrderPayment: jest.fn().mockResolvedValue(true),
+    };
+    const controller = new OrdersController(
+      prisma as unknown as PrismaService,
+      stripe as unknown as StripeService,
+      {} as NotificationsService,
+      {} as CartService,
+      {} as MediaUploadService,
+    );
+
+    const result = await controller.one(
+      {
+        id: 'customer-1',
+        email: 'customer@example.com',
+        role: UserRole.CUSTOMER,
+      },
+      'order-1',
+    );
+
+    expect(stripe.syncPendingOrderPayment).toHaveBeenCalledWith('order-1');
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: OrderStatus.PAID,
+        paymentStatus: PaymentStatus.SUCCEEDED,
+        canCancel: false,
+      }),
+    );
+  });
+
+  it('flips pending orders to paid on the list after Stripe has collected payment', async () => {
+    prisma.order.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 'order-1',
+          orderNumber: 'CC-90422',
+          status: OrderStatus.PAYMENT_PENDING,
+          subtotal: 299,
+          tax: 10.5,
+          total: 324.5,
+          paidAt: null,
+          createdAt: new Date('2026-04-24T13:12:00.000Z'),
+          shippingAddress: {
+            line1: '128 Pristine Way',
+            city: 'Clean Valley',
+            state: 'CA',
+            zipCode: '90210',
+          },
+          items: [],
+          statusHistory: [],
+          returnRequests: [],
+          payments: [{ status: PaymentStatus.PROCESSING }],
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'order-1',
+          orderNumber: 'CC-90422',
+          status: OrderStatus.PAID,
+          subtotal: 299,
+          tax: 10.5,
+          total: 324.5,
+          paidAt: new Date('2026-04-24T13:45:00.000Z'),
+          createdAt: new Date('2026-04-24T13:12:00.000Z'),
+          shippingAddress: {
+            line1: '128 Pristine Way',
+            city: 'Clean Valley',
+            state: 'CA',
+            zipCode: '90210',
+          },
+          items: [],
+          statusHistory: [],
+          returnRequests: [],
+          payments: [{ status: PaymentStatus.SUCCEEDED }],
+        },
+      ]);
+    prisma.order.count.mockResolvedValue(1);
+    const stripe = {
+      syncPendingOrderPayment: jest.fn().mockResolvedValue(true),
+    };
+    const controller = new OrdersController(
+      prisma as unknown as PrismaService,
+      stripe as unknown as StripeService,
+      {} as NotificationsService,
+      {} as CartService,
+      {} as MediaUploadService,
+    );
+
+    const result = await controller.list(
+      {
+        id: 'customer-1',
+        email: 'customer@example.com',
+        role: UserRole.CUSTOMER,
+      },
+      { group: CustomerOrderGroup.ACTIVE, page: 1, pageSize: 25 },
+    );
+
+    expect(stripe.syncPendingOrderPayment).toHaveBeenCalledWith('order-1');
+    expect(result.items[0]).toEqual(
+      expect.objectContaining({
+        status: OrderStatus.PAID,
+        paymentStatus: PaymentStatus.SUCCEEDED,
+        canCancel: false,
+      }),
+    );
+  });
 });
