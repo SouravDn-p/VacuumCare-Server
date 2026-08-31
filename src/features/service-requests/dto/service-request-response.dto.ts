@@ -151,6 +151,27 @@ export class ServiceRequestStatusHistoryResponseDto {
   @ApiProperty({ type: String, format: 'date-time' }) createdAt!: string;
 }
 
+export class ServiceRequestCustomerResponseDto {
+  @ApiProperty({ example: 'customer-user-id' }) id!: string;
+  @ApiProperty({ example: 'Sarah' }) firstName!: string;
+  @ApiProperty({ example: 'Thompson' }) lastName!: string;
+  @ApiProperty({ example: 'sarah@example.com' }) email!: string;
+  @ApiPropertyOptional({ nullable: true, example: '+15145550188' })
+  phone!: string | null;
+}
+
+export class ServiceRequestAddressResponseDto {
+  @ApiProperty({ example: 'address-id' }) id!: string;
+  @ApiProperty({ example: '1842 Maplewood Drive' }) line1!: string;
+  @ApiPropertyOptional({ nullable: true, example: 'Apt 4' })
+  apartment!: string | null;
+  @ApiProperty({ example: 'Westmount' }) city!: string;
+  @ApiProperty({ example: 'QC' }) state!: string;
+  @ApiProperty({ example: 'H3Z 2A4' }) zipCode!: string;
+  @ApiProperty({ example: 'Canada' }) country!: string;
+  @ApiProperty({ example: false }) isPrimary!: boolean;
+}
+
 export class ServiceRequestResponseDto {
   @ApiProperty({ example: 'request-id' }) id!: string;
   @ApiProperty({ example: 'SR-AB12CD34' }) requestNumber!: string;
@@ -168,6 +189,10 @@ export class ServiceRequestResponseDto {
   @ApiPropertyOptional({ nullable: true, type: String, format: 'date-time' })
   scheduledEnd!: string | null;
   @ApiPropertyOptional({ nullable: true }) cancellationReason!: string | null;
+  @ApiProperty({ type: ServiceRequestCustomerResponseDto })
+  customer!: ServiceRequestCustomerResponseDto;
+  @ApiProperty({ type: ServiceRequestAddressResponseDto })
+  address!: ServiceRequestAddressResponseDto;
   @ApiProperty({ type: [ServiceMediaResponseDto] })
   media!: ServiceMediaResponseDto[];
   @ApiPropertyOptional({ type: QuoteResponseDto, nullable: true })

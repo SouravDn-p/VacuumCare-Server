@@ -41,7 +41,7 @@ export class TechnicianServiceRequestsController {
   @ApiOperation({
     summary: 'List jobs assigned to the authenticated technician',
     description:
-      'Admin assigns the technician and sends the schedule. This list only includes those assigned jobs.',
+      'Admin assigns the technician and sends the schedule. This list only includes those assigned jobs. Each item includes customer contact and the job address.',
   })
   @ApiQuery({ name: 'status', required: false, enum: RequestStatus })
   @ApiOkResponse({ type: ServiceRequestResponseDto, isArray: true })
@@ -52,6 +52,8 @@ export class TechnicianServiceRequestsController {
   @Get(':id')
   @ApiOperation({
     summary: 'Get one assigned service request',
+    description:
+      'Includes the job customer contact (name, email, phone) and service address. Use customer.phone for a native call, and address for navigation.',
   })
   @ApiParam({ name: 'id', description: 'Service request ID' })
   @ApiOkResponse({ type: ServiceRequestResponseDto })

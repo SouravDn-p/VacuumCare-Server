@@ -46,14 +46,33 @@ const CUSTOMER_CANCELLABLE = new Set<RequestStatus>([
 ]);
 
 export const requestDetailInclude = {
-  customer: { omit: { passwordHash: true } },
+  customer: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      phone: true,
+    },
+  },
   technician: {
     omit: { passwordHash: true },
     include: { technician: true },
   },
   category: { include: { issues: true } },
   issue: true,
-  address: true,
+  address: {
+    select: {
+      id: true,
+      line1: true,
+      apartment: true,
+      city: true,
+      state: true,
+      zipCode: true,
+      country: true,
+      isPrimary: true,
+    },
+  },
   media: true,
   quotation: {
     include: {
